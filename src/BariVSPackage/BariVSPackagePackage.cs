@@ -40,6 +40,7 @@ namespace KOTEM.BariVSPackage
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
         private Commands commands;
+        private uint registerCookie;
 
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
@@ -72,6 +73,8 @@ namespace KOTEM.BariVSPackage
                 solutionWatcher.Dispose();
                 solutionWatcher = null;
             }
+
+            UnRegisterPriorityCommandTarget();
         }
 
         private void HandleKeyPressed(Keys keyCode)
@@ -109,12 +112,19 @@ namespace KOTEM.BariVSPackage
             commands.IsBuildNeeded = true;
         }
 
+        private void UnRegisterPriorityCommandTarget()
+        {
+            var vsRegisterPriorityCommandTarget =
+                (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
+            if (vsRegisterPriorityCommandTarget == null) return;
+            vsRegisterPriorityCommandTarget.UnregisterPriorityCommandTarget(registerCookie);
+        }
+
         private void RegisterPriorityCommandTarget()
         {
             var vsRegisterPriorityCommandTarget =
                 (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
             if (vsRegisterPriorityCommandTarget == null) return;
-            uint registerCookie;
             vsRegisterPriorityCommandTarget.RegisterPriorityCommandTarget(0, this, out registerCookie);
         }
 
@@ -128,7 +138,9 @@ namespace KOTEM.BariVSPackage
                                     {VSConstants.VSStd97CmdID.StartNoDebug, commands.ExecuteStartWithoutDebugger},
                                     {VSConstants.VSStd97CmdID.Start, commands.ExecuteStartWithDebugger},
                                     {VSConstants.VSStd97CmdID.CancelBuild, commands.CancelAnyPreviousBariAction},
-                                    {VSConstants.VSStd97CmdID.Stop, commands.StopDebugger}
+                                    {VSConstants.VSStd97CmdID.Stop, commands.StopDebugger},
+                                    {VSConstants.VSStd97CmdID.BuildSel, commands.ExecuteBariBuild},
+                                    {VSConstants.VSStd97CmdID.RebuildSel, commands.ExecuteBariRebuild}
                                 };
 
             var allowedWhenDebugging = new HashSet<VSConstants.VSStd97CmdID>

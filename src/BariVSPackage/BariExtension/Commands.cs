@@ -29,13 +29,13 @@ namespace KOTEM.BariVSPackage.BariExtension
         private void ShowBuildStatus()
         {
             //var dte = GetDte();
-            // dte.StatusBar.Progress(true, "Building...");
+            //dte.StatusBar.Progress(true, "Building...");
         }
 
         private void HideBuildStatus(bool cancelled)
         {
             //var dte = GetDte();
-            // dte.StatusBar.Progress(false);
+            //dte.StatusBar.Progress(false);
         }
 
         public void ExecuteBariBuild()
@@ -46,12 +46,12 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void ExecuteBariBuild(Action<bool> after)
         {
-            ExecuteBariAction("build", after);
+            ExecuteBariAction("build", after: after);
         }
 
         public void ExecuteBariRebuild()
         {
-            ExecuteBariAction("rebuild", HideBuildStatus);
+            ExecuteBariAction("rebuild", after: HideBuildStatus);
         }
 
         public void ExecuteBariClean()
@@ -59,7 +59,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             ExecuteBariAction("clean");
         }
 
-        private void ExecuteBariAction(string actionName, Action<bool> after = null)
+        private void ExecuteBariAction(string actionName, bool forceAction = false, Action<bool> after = null)
         {
             var solutionInfo = new SolutionInfo(GetDte());
 
@@ -86,7 +86,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 {
                     after(cancelled);
                 }
-            });
+            }, forceAction);
         }
 
         public void CancelAnyPreviousBariAction()
@@ -140,10 +140,10 @@ namespace KOTEM.BariVSPackage.BariExtension
                     case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
                         break;
                 }
-                ExecuteBariBuild(StartWithDebugger);
+                ExecuteBariBuild(c => { StartWithDebugger(c); HideBuildStatus(c); });
                 return;
             }
-            
+
             StartWithDebugger(false);
         }
 
@@ -162,10 +162,10 @@ namespace KOTEM.BariVSPackage.BariExtension
                     case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
                         break;
                 }
-                ExecuteBariBuild(StartWithoutDebugger);
+                ExecuteBariBuild(c => { StartWithoutDebugger(c); HideBuildStatus(c); });
                 return;
             }
-            
+
             StartWithoutDebugger(false);
         }
 
@@ -225,7 +225,11 @@ namespace KOTEM.BariVSPackage.BariExtension
             if (solutionDir != null)
             {
                 var startupProjectName = ((Array)solutionInfo.Solution.SolutionBuild.StartupProjects).Cast<string>().First();
-                var startupProject = solutionInfo.Solution.Projects.Item(startupProjectName);
+                var startupProject = GetProject(solutionInfo, startupProjectName);
+
+                if (startupProject == null)
+                    return -1;
+
                 var configurationManager = startupProject.ConfigurationManager;
                 var activeConfiguration = configurationManager.ActiveConfiguration;
                 var startParameters = StartParameters.FromProperties(activeConfiguration.Properties);
@@ -235,7 +239,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 {
                     var processStartInfo = new ProcessStartInfo(exeName)
                     {
-                        WorkingDirectory = solutionDir,
+                        WorkingDirectory = startParameters.StartWorkingDirectory,
                         Arguments = startParameters.StartArguments,
                         UseShellExecute = false
                     };
@@ -258,6 +262,32 @@ namespace KOTEM.BariVSPackage.BariExtension
                 }
             }
             return -1;
+        }
+
+        private Project GetProject(SolutionInfo solutionInfo, string name)
+        {
+            foreach (Project solFolder in solutionInfo.Solution.Projects)
+            {
+                if (solFolder != null)
+                {
+                    if (solFolder.UniqueName == name)
+                        return solFolder;
+                }
+
+                foreach (var projectItem in solFolder.ProjectItems)
+                {
+                    ProjectItem tmpItem = projectItem as ProjectItem;
+                    if (tmpItem != null)
+                    {
+                        Project proj = tmpItem.Object as Project;
+                        if (proj != null && proj.UniqueName == name)
+                            return proj;
+                    }
+
+
+                }
+            }
+            return null;
         }
 
         private static string GetExeName(StartParameters startParameters, Project startupProject)

@@ -22,7 +22,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             this.workingDirectory = workingDirectory;
         }
 
-        public void Execute(string actionName, Action<bool> after = null)
+        public void Execute(string actionName, bool forceAction, Action<bool> after = null)
         {
             var arguments = string.Format("--target {0} {1} {2}", goal, actionName, productName);
             ShowOutput(string.Format("{0} {1}", bariPath, arguments));
@@ -37,7 +37,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                                            WorkingDirectory = workingDirectory,
                                        };
 
-            var proc = new Process {StartInfo = processStartInfo};
+            var proc = new Process { StartInfo = processStartInfo };
             proc.OutputDataReceived += (sendingProcess, outLine)
                                        => ShowOutput(outLine.Data);
 
@@ -58,7 +58,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 if (proc.HasExited) break;
             }
 
-            if (after != null)
+            if (after != null && (forceAction || proc.ExitCode == 0))
             {
                 after(cancelled);
             }
@@ -69,10 +69,10 @@ namespace KOTEM.BariVSPackage.BariExtension
             bariOutputPane.WriteLine(string.Format("{0}", data));
         }
 
-        public void ExecuteAsync(string actionName, Action<bool> after)
+        public void ExecuteAsync(string actionName, Action<bool> after, bool forceAction)
         {
             isCancellationRequested = false;
-            Task.Factory.StartNew(() => Execute(actionName, after));
+            Task.Factory.StartNew(() => Execute(actionName, forceAction, after));
         }
 
         public void CancelAll()
