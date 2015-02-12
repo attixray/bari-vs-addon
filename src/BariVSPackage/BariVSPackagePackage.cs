@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.ComponentModel.Design;
 using Microsoft.Win32;
@@ -35,13 +36,13 @@ namespace KOTEM.BariVSPackage
     [ProvideAutoLoad(UIContextGuids80.SolutionExists)]
     [InstalledProductRegistration("#110", "#112", "1.0", IconResourceID = 400)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
-    public sealed class BariVsPackagePackage : Package, IOleCommandTarget, IVsServiceProvider
+    public sealed class BariVsPackagePackage : Package, IVsServiceProvider
     {
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
         private Commands commands;
         private uint registerCookie;
-
+        private CommandTarget target;
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that rely on services provided by VisualStudio.
@@ -53,13 +54,69 @@ namespace KOTEM.BariVSPackage
 
             commands = new Commands(this);
 
+            target = new CommandTarget(this, commands, this);
+
             RegisterPriorityCommandTarget();
             RegisterKeyboardHook();
             RegisterFileSystemWatcher();
+
+            GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
+            GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
+        }
+
+        void SolutionEvents_Opened()
+        {
+            var solutionInfo = new SolutionInfo(GetDte());
+
+            var solutionDir = solutionInfo.TargetWorkingDirectory;
+            if (solutionDir != null)
+            {
+                var startProject = solutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
+
+                if (string.IsNullOrEmpty(startProject)) return;
+
+                var startupProject = GetProject(solutionInfo, startProject);
+
+                if (startupProject == null) return;
+
+                solutionInfo.Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
+
+                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value = (int)StartAction.Program;
+                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value = ".\\" +  solutionInfo.BariConfig.Target 
+                     + "\\" + solutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
+            }
+        }
+
+        private Project GetProject(SolutionInfo solutionInfo, string name)
+        {
+            foreach (Project solFolder in solutionInfo.Solution.Projects)
+            {
+                if (solFolder != null)
+                {
+                    if (solFolder.UniqueName.Contains(name))
+                        return solFolder;
+                }
+
+                foreach (var projectItem in solFolder.ProjectItems)
+                {
+                    ProjectItem tmpItem = projectItem as ProjectItem;
+                    if (tmpItem != null)
+                    {
+                        Project proj = tmpItem.Object as Project;
+                        if (proj != null && proj.UniqueName.Contains(name))
+                            return proj;
+                    }
+
+
+                }
+            }
+            return null;
         }
 
         protected override void Dispose(bool disposing)
         {
+            UnRegisterPriorityCommandTarget();
+
             base.Dispose(disposing);
 
             if (keyboardHook != null)
@@ -73,8 +130,6 @@ namespace KOTEM.BariVSPackage
                 solutionWatcher.Dispose();
                 solutionWatcher = null;
             }
-
-            UnRegisterPriorityCommandTarget();
         }
 
         private void HandleKeyPressed(Keys keyCode)
@@ -118,6 +173,7 @@ namespace KOTEM.BariVSPackage
                 (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
             if (vsRegisterPriorityCommandTarget == null) return;
             vsRegisterPriorityCommandTarget.UnregisterPriorityCommandTarget(registerCookie);
+            registerCookie = 0;
         }
 
         private void RegisterPriorityCommandTarget()
@@ -125,71 +181,19 @@ namespace KOTEM.BariVSPackage
             var vsRegisterPriorityCommandTarget =
                 (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
             if (vsRegisterPriorityCommandTarget == null) return;
-            vsRegisterPriorityCommandTarget.RegisterPriorityCommandTarget(0, this, out registerCookie);
+            vsRegisterPriorityCommandTarget.RegisterPriorityCommandTarget(0, target, out registerCookie);
         }
 
-        int IOleCommandTarget.Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
+        private void CommandEvents_BeforeExecute(string Guid, int ID, object CustomIn, object CustomOut, ref bool CancelDefault)
         {
-            var actionMap = new Dictionary<VSConstants.VSStd97CmdID, Action>
-                                {
-                                    {VSConstants.VSStd97CmdID.BuildSln, commands.ExecuteBariBuild},
-                                    {VSConstants.VSStd97CmdID.RebuildSln, commands.ExecuteBariRebuild},
-                                    {VSConstants.VSStd97CmdID.CleanSln, commands.ExecuteBariClean},
-                                    {VSConstants.VSStd97CmdID.StartNoDebug, commands.ExecuteStartWithoutDebugger},
-                                    {VSConstants.VSStd97CmdID.Start, commands.ExecuteStartWithDebugger},
-                                    {VSConstants.VSStd97CmdID.CancelBuild, commands.CancelAnyPreviousBariAction},
-                                    {VSConstants.VSStd97CmdID.Stop, commands.StopDebugger},
-                                    {VSConstants.VSStd97CmdID.BuildSel, commands.ExecuteBariBuild},
-                                    {VSConstants.VSStd97CmdID.RebuildSel, commands.ExecuteBariRebuild}
-                                };
+            var dte = GetDte();
+            var command = dte.Commands.Item(Guid, ID);
 
-            var allowedWhenDebugging = new HashSet<VSConstants.VSStd97CmdID>
-                                            {
-                                                VSConstants.VSStd97CmdID.Stop,
-                                                VSConstants.VSStd97CmdID.Start  // this means 'Continue' when debugging...
-                                            };
-
-            if (pguidCmdGroup == VSConstants.GUID_VSStandardCommandSet97)
+            if (command != null)
             {
-                var vsStd97CmdID = ToVSStd97CmdID(nCmdID);
-                if (vsStd97CmdID.HasValue)
-                {
-                    Action action;
-                    if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
-                    {
-                        var solutionInfo = new SolutionInfo(GetDte());
-                        if (solutionInfo.IsBariSolution)
-                        {
-                            if (!allowedWhenDebugging.Contains(vsStd97CmdID.Value))
-                            {
-                                if (commands.IsDebugging()) return VSConstants.S_OK;
-                            }
-                            var dte = GetDte();
-                            dte.ExecuteCommand("File.SaveAll");
-
-                            action();
-                            return VSConstants.S_OK;
-                        }
-                    }
-                }
-                return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+                Debug.WriteLine(command.Name);
+                System.Threading.Thread.Sleep(3000);
             }
-            return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_UNKNOWNGROUP;
-        }
-
-        private static VSConstants.VSStd97CmdID? ToVSStd97CmdID(uint nCmdID)
-        {
-            if (nCmdID > Int32.MaxValue)
-            {
-                return null;
-            }
-            var iCmdId = (int)nCmdID;
-            if (!typeof(VSConstants.VSStd97CmdID).IsEnumDefined(iCmdId))
-            {
-                return null;
-            }
-            var cmdID = (VSConstants.VSStd97CmdID)iCmdId;
-            return cmdID;
         }
 
         public DTE GetDte()

@@ -19,6 +19,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         public Commands(IVsServiceProvider owner)
         {
             this.owner = owner;
+            isBuildNeeded = true;
         }
 
         private DTE GetDte()
@@ -46,20 +47,20 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void ExecuteBariBuild(Action<bool> after)
         {
-            ExecuteBariAction("build", after: after);
+            ExecuteBariActionAsync("build", after: after);
         }
 
         public void ExecuteBariRebuild()
         {
-            ExecuteBariAction("rebuild", after: HideBuildStatus);
+            ExecuteBariActionAsync("rebuild", after: HideBuildStatus);
         }
 
         public void ExecuteBariClean()
         {
-            ExecuteBariAction("clean");
+            ExecuteBariActionAsync("clean");
         }
 
-        private void ExecuteBariAction(string actionName, bool forceAction = false, Action<bool> after = null)
+        private void ExecuteBariActionAsync(string actionName, bool forceAction = false, Action<bool> after = null)
         {
             var solutionInfo = new SolutionInfo(GetDte());
 
@@ -89,6 +90,37 @@ namespace KOTEM.BariVSPackage.BariExtension
             }, forceAction);
         }
 
+        private int ExecuteBariAction(string actionName, bool forceAction = false, Func<bool, int> after = null)
+        {
+            var solutionInfo = new SolutionInfo(GetDte());
+
+            CancelAnyPreviousBariAction();
+
+            var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;
+            var bariOutputPane = new BariOutputPane(output);
+            bariOutputPane.Clear();
+            bariOutputPane.WriteLine(string.Format("Executing bari {0}...\n", actionName));
+
+            var workingDirectory = solutionInfo.BariWorkingDirectory;
+
+            var bariConfig = solutionInfo.BariConfig;
+
+            bariShell = new BariShell(bariConfig.BariPath, bariConfig.Goal, bariConfig.Target, workingDirectory, bariOutputPane);
+            return bariShell.Execute(actionName, forceAction, cancelled =>
+            {
+                CancelAnyPreviousBariAction();
+                if (!cancelled)
+                {
+                    isBuildNeeded = false;
+                }
+                if (after != null)
+                {
+                    return after(cancelled);
+                }
+                return 0;
+            });
+        }
+
         public void CancelAnyPreviousBariAction()
         {
             if (bariShell != null)
@@ -100,19 +132,14 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         public void StopDebugger()
         {
-            if (debuggedProcess != null)
+            var dte = GetDte();
+            try
             {
-                var dte = GetDte();
-                try
-                {
-                    dte.Debugger.TerminateAll();
-                    debuggedProcess.Kill();
-                }
-                catch (InvalidOperationException)
-                {
+                dte.Debugger.TerminateAll();
+            }
+            catch (InvalidOperationException)
+            {
 
-                }
-                debuggedProcess = null;
             }
         }
 
@@ -125,7 +152,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             return dte.Debugger.DebuggedProcesses.Count > 0;
         }
 
-        public void ExecuteStartWithDebugger()
+        public int BuildIfNeeded(Func<Guid, int> after, Guid g)
         {
             if (IsBuildNeeded)
             {
@@ -133,19 +160,45 @@ namespace KOTEM.BariVSPackage.BariExtension
                 switch (promptStopDebuggerResult)
                 {
                     case PromptStopDebuggerResult.Cancel:
-                        return;
+                        return 0;
                     case PromptStopDebuggerResult.StopDebuggerAndExecuteAction:
                         StopDebugger();
                         break;
                     case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
                         break;
                 }
-                ExecuteBariBuild(c => { StartWithDebugger(c); HideBuildStatus(c); });
-                return;
+                return ExecuteBariAction("build", false, c =>
+                {
+                    HideBuildStatus(c);
+                    return after(g);
+                });
             }
-
-            StartWithDebugger(false);
+            else
+            {
+                return after(g);
+            }
         }
+
+        //public void ExecuteStartWithDebugger()
+        //{
+        //    if (IsBuildNeeded)
+        //    {
+        //        var promptStopDebuggerResult = IsDebugging() ? PromptStopDebugger() : PromptStopDebuggerResult.StopDebuggerAndExecuteAction;
+        //        switch (promptStopDebuggerResult)
+        //        {
+        //            case PromptStopDebuggerResult.Cancel:
+        //                return;
+        //            case PromptStopDebuggerResult.StopDebuggerAndExecuteAction:
+        //                StopDebugger();
+        //                break;
+        //            case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
+        //                break;
+        //        }
+        //        ExecuteBariBuild(c => { StartWithDebugger(c); HideBuildStatus(c); });
+        //        return;
+        //    }
+        //    StartWithDebugger(false);
+        //}
 
         private void ExecuteStartWithoutDebugger(bool cancelled)
         {
@@ -165,7 +218,6 @@ namespace KOTEM.BariVSPackage.BariExtension
                 ExecuteBariBuild(c => { StartWithoutDebugger(c); HideBuildStatus(c); });
                 return;
             }
-
             StartWithoutDebugger(false);
         }
 
@@ -181,24 +233,24 @@ namespace KOTEM.BariVSPackage.BariExtension
             ExecuteStartWithoutDebugger(false);
         }
 
-        public void StartWithDebugger(bool cancelled)
-        {
-            HideBuildStatus(cancelled);
+        //public void StartWithDebugger(bool cancelled)
+        //{
+        //    HideBuildStatus(cancelled);
 
-            if (cancelled) return;
+        //    if (cancelled) return;
 
-            new SolutionInfo(GetDte());
-            var dte = GetDte();
-            if (dte.Debugger.DebuggedProcesses.Count > 0)
-            {
-                dte.Debugger.Go(false);
-                return;
-            }
+        //    new SolutionInfo(GetDte());
+        //    var dte = GetDte();
+        //    if (dte.Debugger.DebuggedProcesses.Count > 0)
+        //    {
+        //        dte.Debugger.Go(false);
+        //        return;
+        //    }
 
-            var processId = StartProcess();
+        //    var processId = StartProcess();
 
-            AttachDebugger(processId);
-        }
+        //    AttachDebugger(processId);
+        //}
 
         public void StartWithoutDebugger(bool cancelled)
         {

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -22,7 +23,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             this.workingDirectory = workingDirectory;
         }
 
-        public void Execute(string actionName, bool forceAction, Action<bool> after = null)
+        public int Execute(string actionName, bool forceAction, Func<bool,int> after = null)
         {
             var arguments = string.Format("--target {0} {1} {2}", goal, actionName, productName);
             ShowOutput(string.Format("{0} {1}", bariPath, arguments));
@@ -45,6 +46,9 @@ namespace KOTEM.BariVSPackage.BariExtension
             proc.BeginOutputReadLine();
             var cancelled = false;
 
+            DispatcherFrame frame = new DispatcherFrame();
+
+            Task.Factory.StartNew(() => { 
             while (true)
             {
                 proc.WaitForExit(100);
@@ -55,13 +59,20 @@ namespace KOTEM.BariVSPackage.BariExtension
                     cancelled = true;
                     break;
                 }
-                if (proc.HasExited) break;
+                if (proc.HasExited)
+                {
+                    frame.Continue = false;
+                    break;
+                }
             }
+            });
+            Dispatcher.PushFrame(frame);
 
             if (after != null && (forceAction || proc.ExitCode == 0))
             {
-                after(cancelled);
+                return after(cancelled);
             }
+            return 0;
         }
 
         private void ShowOutput(string data)
@@ -72,7 +83,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         public void ExecuteAsync(string actionName, Action<bool> after, bool forceAction)
         {
             isCancellationRequested = false;
-            Task.Factory.StartNew(() => Execute(actionName, forceAction, after));
+            Task.Factory.StartNew(() => Execute(actionName, forceAction, (f) => { after(f); return 0; }));
         }
 
         public void CancelAll()
