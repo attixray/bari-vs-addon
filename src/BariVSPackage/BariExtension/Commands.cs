@@ -259,15 +259,15 @@ namespace KOTEM.BariVSPackage.BariExtension
             if (!cancelled) StartProcess();
         }
 
-        private void AttachDebugger(int processId)
-        {
-            var dte = GetDte();
-            var dteProcess = dte.Debugger.LocalProcesses.OfType<EnvDTE.Process>().FirstOrDefault(p => p.ProcessID == processId);
-            if (dteProcess != null)
-            {
-                dteProcess.Attach();
-            }
-        }
+        //private void AttachDebugger(int processId)
+        //{
+        //    var dte = GetDte();
+        //    var dteProcess = dte.Debugger.LocalProcesses.OfType<EnvDTE.Process>().FirstOrDefault(p => p.ProcessID == processId);
+        //    if (dteProcess != null)
+        //    {
+        //        dteProcess.Attach();
+        //    }
+        //}
 
         private int StartProcess()
         {
@@ -291,7 +291,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 {
                     var processStartInfo = new ProcessStartInfo(exeName)
                     {
-                        WorkingDirectory = startParameters.StartWorkingDirectory,
+                        WorkingDirectory = string.IsNullOrEmpty(startParameters.StartWorkingDirectory) ? solutionInfo.TargetWorkingDirectory : startParameters.StartWorkingDirectory,
                         Arguments = startParameters.StartArguments,
                         UseShellExecute = false
                     };

@@ -11,15 +11,15 @@ namespace KOTEM.BariVSPackage.BariExtension
 {
     class CommandTarget : IOleCommandTarget
     {
-        private readonly IOleCommandTarget _baseImpl;
+        private readonly IOleCommandTarget baseImpl;
         private readonly Commands commands;
-        private readonly IVsServiceProvider _provider;
+        private readonly IVsServiceProvider provider;
 
         public CommandTarget(IOleCommandTarget baseImpl, Commands commands, IVsServiceProvider provider)
         {
-            _baseImpl = baseImpl;
+            this.baseImpl = baseImpl;
             this.commands = commands;
-            _provider = provider;
+            this.provider = provider;
         }
 
         public int Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
@@ -48,44 +48,44 @@ namespace KOTEM.BariVSPackage.BariExtension
                   var vsStd97CmdID = ToVSStd97CmdID(nCmdID);
                   if (vsStd97CmdID.HasValue)
                   {
-                      var solutionInfo = new SolutionInfo(_provider.GetDte());
+                      var solutionInfo = new SolutionInfo(provider.GetDte());
                       if (solutionInfo.IsBariSolution)
                       {
                           if (allowedWhenDebugging.Contains(vsStd97CmdID.Value))
                           {
-                              if (commands.IsDebugging()) return _baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                              if (commands.IsDebugging()) return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
                           }
 
                           Action action;
                           if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
                           {
-                              var dte = _provider.GetDte();
+                              var dte = provider.GetDte();
                               dte.ExecuteCommand("File.SaveAll");
 
                               action();
                               return VSConstants.S_OK;
 
                           }
-                          if (vsStd97CmdID.Value == VSConstants.VSStd97CmdID.StartNoDebug || vsStd97CmdID.Value == VSConstants.VSStd97CmdID.Start)
+                          if (vsStd97CmdID.Value == VSConstants.VSStd97CmdID.Start)
                           {
-                              var dte = _provider.GetDte();
+                              var dte = provider.GetDte();
                               dte.ExecuteCommand("File.SaveAll");
 
                               return commands.BuildIfNeeded((g) =>
                               {
-                                  return _baseImpl.Exec(g, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                                  return baseImpl.Exec(g, nCmdID, nCmdexecopt, pvaIn, pvaOut);
                               },pguidCmdGroup);
                           }
                       }
                   }
-                  return _baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                  return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
               }
-              return _baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+              return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
         }
 
         public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
         {
-            return _baseImpl.QueryStatus(pguidCmdGroup, cCmds, prgCmds, pCmdText);
+            return baseImpl.QueryStatus(pguidCmdGroup, cCmds, prgCmds, pCmdText);
         }
 
         private static VSConstants.VSStd97CmdID? ToVSStd97CmdID(uint nCmdID)

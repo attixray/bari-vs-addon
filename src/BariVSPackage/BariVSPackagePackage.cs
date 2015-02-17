@@ -61,7 +61,6 @@ namespace KOTEM.BariVSPackage
             RegisterFileSystemWatcher();
 
             GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
-            GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
         }
 
         void SolutionEvents_Opened()
@@ -71,19 +70,25 @@ namespace KOTEM.BariVSPackage
             var solutionDir = solutionInfo.TargetWorkingDirectory;
             if (solutionDir != null)
             {
-                var startProject = solutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
+                try
+                {
+                    var startProject = solutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
 
-                if (string.IsNullOrEmpty(startProject)) return;
+                    if (string.IsNullOrEmpty(startProject)) return;
 
-                var startupProject = GetProject(solutionInfo, startProject);
+                    var startupProject = GetProject(solutionInfo, startProject);
 
-                if (startupProject == null) return;
+                    if (startupProject == null) return;
 
-                solutionInfo.Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
+                    solutionInfo.Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
 
-                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value = (int)StartAction.Program;
-                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value = ".\\" +  solutionInfo.BariConfig.Target 
-                     + "\\" + solutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
+                    startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value = (int)StartAction.Program;
+                    startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value = ".\\" + solutionInfo.BariConfig.Target
+                         + "\\" + solutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
+                }
+                catch (Exception)
+                {
+                }
             }
         }
 
@@ -115,6 +120,8 @@ namespace KOTEM.BariVSPackage
 
         protected override void Dispose(bool disposing)
         {
+            GetDte().Events.SolutionEvents.Opened -= SolutionEvents_Opened;
+
             UnRegisterPriorityCommandTarget();
 
             base.Dispose(disposing);
@@ -182,18 +189,6 @@ namespace KOTEM.BariVSPackage
                 (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
             if (vsRegisterPriorityCommandTarget == null) return;
             vsRegisterPriorityCommandTarget.RegisterPriorityCommandTarget(0, target, out registerCookie);
-        }
-
-        private void CommandEvents_BeforeExecute(string Guid, int ID, object CustomIn, object CustomOut, ref bool CancelDefault)
-        {
-            var dte = GetDte();
-            var command = dte.Commands.Item(Guid, ID);
-
-            if (command != null)
-            {
-                Debug.WriteLine(command.Name);
-                System.Threading.Thread.Sleep(3000);
-            }
         }
 
         public DTE GetDte()
