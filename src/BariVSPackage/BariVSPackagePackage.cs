@@ -1,18 +1,13 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.ComponentModel.Design;
-using Microsoft.Win32;
-using Microsoft.VisualStudio;
+using KOTEM.BariVSPackage.BariExtension.Option;
 using Microsoft.VisualStudio.Shell.Interop;
-using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.Shell;
 using KOTEM.BariVSPackage.BariExtension;
 using System.Windows.Forms;
 using System.IO;
-using System.Collections.Generic;
 using EnvDTE;
 using Commands = KOTEM.BariVSPackage.BariExtension.Commands;
 
@@ -35,6 +30,10 @@ namespace KOTEM.BariVSPackage
     // in the Help/About dialog of Visual Studio.
     [ProvideAutoLoad(UIContextGuids80.SolutionExists)]
     [InstalledProductRegistration("#110", "#112", "1.0", IconResourceID = 400)]
+    [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "Addon", 201, 202, true)]
+    [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "Addon", 201, 202, true)]
+    [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
+    [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
     public sealed class BariVsPackagePackage : Package, IVsServiceProvider
     {
@@ -63,12 +62,12 @@ namespace KOTEM.BariVSPackage
             GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
         }
 
-        void SolutionEvents_Opened()
+        private void SolutionEvents_Opened()
         {
             var solutionInfo = new SolutionInfo(GetDte());
 
             var solutionDir = solutionInfo.TargetWorkingDirectory;
-            if (solutionDir != null)
+            if (Properties.Settings.Default.SetStartUpProject && solutionInfo.IsBariSolution && solutionDir != null)
             {
                 try
                 {
@@ -85,6 +84,8 @@ namespace KOTEM.BariVSPackage
                     startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value = (int)StartAction.Program;
                     startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value = ".\\" + solutionInfo.BariConfig.Target
                          + "\\" + solutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
+                    startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartArguments").Value =
+                        Properties.Settings.Default.StartArguments;
                 }
                 catch (Exception)
                 {

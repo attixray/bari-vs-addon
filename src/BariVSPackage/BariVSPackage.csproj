@@ -128,6 +128,12 @@
     <Compile Include="BariExtension\CommandTarget.cs" />
     <Compile Include="BariExtension\IVsServiceProvider.cs" />
     <Compile Include="BariExtension\KeyboardHook.cs" />
+    <Compile Include="BariExtension\Option\BariOptionsDialog.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="BariExtension\Option\AddonOptionsDialog.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="BariExtension\ParsedMessage.cs" />
     <Compile Include="BariExtension\PromptStopDebuggerDialog.cs">
       <SubType>Form</SubType>
@@ -142,6 +148,11 @@
     <Compile Include="BariExtension\Wrappers\VsOutputWindowWrapper.cs" />
     <Compile Include="BariExtension\Wrappers\WrapperFactory.cs" />
     <Compile Include="Guids.cs" />
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <DependentUpon>Settings.settings</DependentUpon>
+    </Compile>
     <Compile Include="Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
@@ -152,6 +163,12 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="BariExtension\Option\BariOptionsDialog.resx">
+      <DependentUpon>BariOptionsDialog.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="BariExtension\Option\AddonOptionsDialog.resx">
+      <DependentUpon>AddonOptionsDialog.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="BariExtension\PromptStopDebuggerDialog.resx" />
     <EmbeddedResource Include="Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
@@ -164,7 +181,12 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
+    <None Include="app.config" />
     <None Include="packages.config" />
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>

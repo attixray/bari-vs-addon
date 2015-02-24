@@ -1,10 +1,8 @@
-using EnvDTE;
-
 namespace KOTEM.BariVSPackage.BariExtension
 {
     public class StartParameters
     {
-        public static StartParameters FromProperties(Properties properties)
+        public static StartParameters FromProperties(EnvDTE.Properties properties)
         {
             var result = new StartParameters
                              {
