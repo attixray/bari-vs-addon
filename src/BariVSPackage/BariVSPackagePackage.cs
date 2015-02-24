@@ -82,7 +82,7 @@ namespace KOTEM.BariVSPackage
                     solutionInfo.Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
 
                     startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value = (int)StartAction.Program;
-                    startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value = ".\\" + solutionInfo.BariConfig.Target
+                    startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value = Path.GetDirectoryName(solutionInfo.Solution.FileName) + "\\" + solutionInfo.BariConfig.Target
                          + "\\" + solutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
                     startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartArguments").Value =
                         Properties.Settings.Default.StartArguments;
