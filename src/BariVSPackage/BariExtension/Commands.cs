@@ -69,6 +69,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;
             var bariOutputPane = new BariOutputPane(output);
             bariOutputPane.Clear();
+            GetDte().ExecuteCommand("View.Output");
             bariOutputPane.WriteLine(string.Format("Executing bari {0}...\n", actionName));
 
             var workingDirectory = solutionInfo.BariWorkingDirectory;
@@ -99,6 +100,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;
             var bariOutputPane = new BariOutputPane(output);
             bariOutputPane.Clear();
+            GetDte().ExecuteCommand("View.Output");
             bariOutputPane.WriteLine(string.Format("Executing bari {0}...\n", actionName));
 
             var workingDirectory = solutionInfo.BariWorkingDirectory;

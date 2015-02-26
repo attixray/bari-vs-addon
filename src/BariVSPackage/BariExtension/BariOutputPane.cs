@@ -70,5 +70,21 @@ namespace KOTEM.BariVSPackage.BariExtension
 
             pane.Clear();
         }
+
+        public void Activate()
+        {
+            var pane = GetBariOutputPane();
+            if (pane == null) return;
+
+            pane.Activate();
+        }
+
+        public void Hide()
+        {
+            var pane = GetBariOutputPane();
+            if (pane == null) return;
+
+            pane.Hide();
+        }
     }
 }
