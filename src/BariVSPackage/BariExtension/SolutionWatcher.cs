@@ -8,7 +8,7 @@ namespace KOTEM.BariVSPackage.BariExtension
     public class SolutionWatcher : IDisposable
     {
         private FileSystemWatcher watcher;
-        private HashSet<string> extensions = new HashSet<string>(new string[] { ".cs", ".xaml", ".cpp", ".xml", ".h" });
+        private HashSet<string> extensions = new HashSet<string>(new string[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h" });
 
         public SolutionWatcher(string srcDir)
         {
