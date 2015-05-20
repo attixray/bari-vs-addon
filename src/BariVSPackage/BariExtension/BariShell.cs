@@ -57,6 +57,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     proc.Kill();
                     ShowOutput("Build cancelled.");
                     cancelled = true;
+                    frame.Continue = false;
                     break;
                 }
                 if (proc.HasExited)
