@@ -169,11 +169,12 @@ namespace KOTEM.BariVSPackage.BariExtension
                     case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
                         break;
                 }
-                return ExecuteBariAction("build", false, c =>
+                ExecuteBariActionAsync("build", false, c =>
                 {
                     HideBuildStatus(c);
-                    return after(g);
+                    after(g);
                 });
+                return 0;
             }
             else
             {
