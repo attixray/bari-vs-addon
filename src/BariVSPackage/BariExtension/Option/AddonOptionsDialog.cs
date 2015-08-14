@@ -20,6 +20,16 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
             set { Properties.Settings.Default.StartArguments = value; }
         }
 
+
+        //[Category("General")]
+        //[Description("Set \"Common Language Runtime Exceptions\"")]
+        //public bool SetExceptions
+        //{
+        //    get { return Properties.Settings.Default.SetExceptions; }
+        //    set { Properties.Settings.Default.SetExceptions = value; }
+        //}
+
+
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();

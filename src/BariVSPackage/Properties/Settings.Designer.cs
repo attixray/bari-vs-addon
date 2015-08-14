@@ -46,5 +46,17 @@ namespace KOTEM.BariVSPackage.Properties {
                 this["StartArguments"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool SetExceptions {
+            get {
+                return ((bool)(this["SetExceptions"]));
+            }
+            set {
+                this["SetExceptions"] = value;
+            }
+        }
     }
 }
