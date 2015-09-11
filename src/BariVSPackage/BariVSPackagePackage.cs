@@ -2,7 +2,6 @@
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
-using EnvDTE90;
 using KOTEM.BariVSPackage.BariExtension.Option;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Shell;
@@ -36,7 +35,7 @@ namespace KOTEM.BariVSPackage
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
-    public sealed class BariVsPackagePackage : Package, IVsServiceProvider, IVsSolutionLoadManager, IVsSolutionEvents
+    public sealed class BariVsPackagePackage : Package, IVsServiceProvider
     {
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
@@ -53,7 +52,7 @@ namespace KOTEM.BariVSPackage
             base.Initialize();
 
             commands = new Commands(this);
-            
+
             target = new CommandTarget(this, commands, this);
 
             RegisterPriorityCommandTarget();
@@ -65,8 +64,7 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionEvents_Opened()
         {
-            var dte = GetDte();
-            var solutionInfo = new SolutionInfo(dte);
+            var solutionInfo = new SolutionInfo(GetDte());
 
             var solutionDir = solutionInfo.TargetWorkingDirectory;
             if (Properties.Settings.Default.SetStartUpProject && solutionInfo.IsBariSolution && solutionDir != null)
@@ -93,30 +91,6 @@ namespace KOTEM.BariVSPackage
                 {
                 }
             }
-
-            //if (Properties.Settings.Default.SetExceptions && solutionInfo.IsBariSolution && solutionDir != null)
-            //{
-            //    try
-            //    {
-            //        var dbg = dte.Debugger as Debugger3;
-            //        if (dbg != null)
-            //        {
-            //            var ex = dbg.ExceptionGroups.Item("Common Language Runtime Exceptions");
-            //            if (ex != null)
-            //            {
-            //                var common = ex.Item("Common Language Runtime Exceptions");
-            //                ex.SetBreakWhenThrown(true, common);
-            //                //foreach (var exceptionSetting in ex)
-            //                //{
-            //                //    ex.SetBreakWhenThrown(true, (ExceptionSetting)exceptionSetting);
-            //                //}
-            //            }
-            //        }
-            //    }
-            //    catch (Exception)
-            //    {
-            //    }
-            //}
         }
 
         private Project GetProject(SolutionInfo solutionInfo, string name)
@@ -226,66 +200,6 @@ namespace KOTEM.BariVSPackage
         public T GetService<T>()
         {
             return (T)GetService(typeof(T));
-        }
-
-        public int OnBeforeOpenProject(ref Guid guidProjectID, ref Guid guidProjectType, string pszFileName, IVsSolutionLoadManagerSupport pSLMgrSupport)
-        {
-            return 0;
-        }
-
-        public int OnDisconnect()
-        {
-            return 0;
-        }
-
-        public int OnAfterCloseSolution(object pUnkReserved)
-        {
-            return 0;
-        }
-
-        public int OnAfterLoadProject(IVsHierarchy pStubHierarchy, IVsHierarchy pRealHierarchy)
-        {
-            return 0;
-        }
-
-        public int OnAfterOpenProject(IVsHierarchy pHierarchy, int fAdded)
-        {
-            return 0;
-        }
-
-        public int OnAfterOpenSolution(object pUnkReserved, int fNewSolution)
-        {
-            return 0;
-        }
-
-        public int OnBeforeCloseProject(IVsHierarchy pHierarchy, int fRemoved)
-        {
-            return 0;
-        }
-
-        public int OnBeforeCloseSolution(object pUnkReserved)
-        {
-            return 0;
-        }
-
-        public int OnBeforeUnloadProject(IVsHierarchy pRealHierarchy, IVsHierarchy pStubHierarchy)
-        {
-            return 0;
-        }
-
-        public int OnQueryCloseProject(IVsHierarchy pHierarchy, int fRemoving, ref int pfCancel)
-        {
-            return 0;
-        }
-
-        public int OnQueryCloseSolution(object pUnkReserved, ref int pfCancel)
-        {
-            return 0;
-        }
-
-        public int OnQueryUnloadProject(IVsHierarchy pRealHierarchy, ref int pfCancel)
-        {
-            return 0;
         }
     }
 }
