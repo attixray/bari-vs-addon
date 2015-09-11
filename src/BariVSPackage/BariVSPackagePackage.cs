@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -37,19 +36,13 @@ namespace KOTEM.BariVSPackage
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
-    public sealed class BariVsPackagePackage : Package, IVsServiceProvider, IVsSolutionLoadManager, IVsSolutionEvents, IVsSolutionEvents5
+    public sealed class BariVsPackagePackage : Package, IVsServiceProvider, IVsSolutionLoadManager, IVsSolutionEvents
     {
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
         private Commands commands;
         private uint registerCookie;
         private CommandTarget target;
-
-        private IVsSolutionLoadManagerSupport loadManagerSupport;
-        private readonly HashSet<Guid> projectGuids = new HashSet<Guid>();
-        private readonly Dictionary<string, Guid> projectNames = new Dictionary<string, Guid>();
-        private uint solutionEventsCoockie;
-
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that rely on services provided by VisualStudio.
@@ -68,18 +61,6 @@ namespace KOTEM.BariVSPackage
             RegisterFileSystemWatcher();
 
             GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
-
-            var vsSolution = GetService(typeof(SVsSolution)) as IVsSolution;
-            if (vsSolution == null)
-                return;
-            vsSolution.AdviseSolutionEvents((IVsSolutionEvents)this, out solutionEventsCoockie);
-            object pvar;
-            vsSolution.GetProperty(-8036, out pvar);
-            if (this == pvar)
-                return;
-            vsSolution.SetProperty(-8036, this);
-
-            loadManagerSupport = (IVsSolutionLoadManagerSupport)vsSolution;
         }
 
         private void SolutionEvents_Opened()
@@ -111,12 +92,6 @@ namespace KOTEM.BariVSPackage
                 catch (Exception)
                 {
                 }
-            }
-
-            if (solutionInfo.IsBariSolution)
-            {
-
-                UpdateProjectLoadPriority();
             }
 
             //if (Properties.Settings.Default.SetExceptions && solutionInfo.IsBariSolution && solutionDir != null)
@@ -253,29 +228,6 @@ namespace KOTEM.BariVSPackage
             return (T)GetService(typeof(T));
         }
 
-        private void UpdateProjectLoadPriority()
-        {
-            if (loadManagerSupport == null)
-                return;
-
-            foreach (var projectGuid in projectGuids)
-            {
-                Guid projectId = projectGuid;
-                loadManagerSupport.SetProjectLoadPriority(ref projectId, (uint)LoadPriority.LoadIfNeeded);
-            }
-        }
-
-        public void OnBeforeOpenProject(ref Guid guidProjectID, ref Guid guidProjectType, string pszFileName)
-        {
-            if (!projectGuids.Contains(guidProjectID))
-            {
-                projectGuids.Add(guidProjectID);
-                projectNames.Add(pszFileName, guidProjectID);
-                if (loadManagerSupport != null)
-                    loadManagerSupport.SetProjectLoadPriority(ref guidProjectID, (uint)LoadPriority.LoadIfNeeded);
-            }
-        }
-
         public int OnBeforeOpenProject(ref Guid guidProjectID, ref Guid guidProjectType, string pszFileName, IVsSolutionLoadManagerSupport pSLMgrSupport)
         {
             return 0;
@@ -298,24 +250,11 @@ namespace KOTEM.BariVSPackage
 
         public int OnAfterOpenProject(IVsHierarchy pHierarchy, int fAdded)
         {
-            var vsSolution = GetService(typeof(SVsSolution)) as IVsSolution;
-            Guid projectGuid;
-            string projectName;
-
-            vsSolution.GetGuidOfProject(pHierarchy, out projectGuid);
-            vsSolution.GetUniqueNameOfProject(pHierarchy, out projectName);
-            
-            if (!projectGuids.Contains(projectGuid))
-            {
-                projectGuids.Add(projectGuid);
-                projectNames.Add(projectName, projectGuid);
-            }
             return 0;
         }
 
         public int OnAfterOpenSolution(object pUnkReserved, int fNewSolution)
         {
-            UpdateProjectLoadPriority();
             return 0;
         }
 
@@ -348,7 +287,5 @@ namespace KOTEM.BariVSPackage
         {
             return 0;
         }
-
-        
     }
 }
