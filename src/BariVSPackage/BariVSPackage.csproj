@@ -138,11 +138,12 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="BariExtension\ParsedMessage.cs" />
-    <Compile Include="BariExtension\PromptStopDebuggerDialog.cs">
+    <Compile Include="BariExtension\Dialogs\PromptStopDebuggerDialog.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="BariExtension\PromptStopDebuggerDialog.Designer.cs" />
-    <Compile Include="BariExtension\PromptStopDebuggerResult.cs" />
+    <Compile Include="BariExtension\Dialogs\PromptStopDebuggerDialog.Designer.cs" />
+    <Compile Include="BariExtension\Dialogs\PromptStopDebuggerResult.cs" />
+    <Compile Include="BariExtension\ReloadDialogKiller.cs" />
     <Compile Include="BariExtension\SolutionInfo.cs" />
     <Compile Include="BariExtension\SolutionWatcher.cs" />
     <Compile Include="BariExtension\StartAction.cs" />
@@ -172,7 +173,7 @@
     <EmbeddedResource Include="BariExtension\Option\AddonOptionsDialog.resx">
       <DependentUpon>AddonOptionsDialog.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="BariExtension\PromptStopDebuggerDialog.resx" />
+    <EmbeddedResource Include="BariExtension\Dialogs\PromptStopDebuggerDialog.resx" />
     <EmbeddedResource Include="Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
@@ -200,6 +201,7 @@
   <ItemGroup>
     <Content Include="Resources\Package.ico" />
   </ItemGroup>
+  <ItemGroup />
   <PropertyGroup>
     <UseCodebase>true</UseCodebase>
   </PropertyGroup>

@@ -20,6 +20,14 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
             set { Properties.Settings.Default.StartArguments = value; }
         }
 
+        [Category("Reload")]
+        [Description("Prompt reload modified projects, solution")]
+        public bool PromptReload
+        {
+            get { return Properties.Settings.Default.PromptReload; }
+            set { Properties.Settings.Default.PromptReload = value; }
+        }
+
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();

@@ -6,10 +6,12 @@ namespace KOTEM.BariVSPackage.BariExtension
 {
     public class SolutionInfo
     {
+        private DTE dte;
         public SolutionInfo(DTE dte)
         {
             if (dte != null)
             {
+                this.dte = dte;
                 Solution = dte.Solution;
             }
         }
@@ -70,6 +72,17 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                 var yamlFileName = Path.ChangeExtension(Solution.FileName, "yaml");
                 return BariSolutionConfig.FromFile(yamlFileName);
+            }
+        }
+
+        public bool IsDebugging
+        {
+            get
+            {
+                if (dte == null) return false;
+                if (dte.Debugger == null) return false;
+
+                return dte.Debugger.DebuggedProcesses.Count > 0;
             }
         }
     }
