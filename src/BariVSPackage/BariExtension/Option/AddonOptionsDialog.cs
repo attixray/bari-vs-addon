@@ -28,6 +28,14 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
             set { Properties.Settings.Default.PromptReload = value; }
         }
 
+        [Category("Reload")]
+        [Description("Keep files open during reload")]
+        public bool KeepFilesOpen
+        {
+            get { return Properties.Settings.Default.KeepFilesOpen; }
+            set { Properties.Settings.Default.KeepFilesOpen = value; }
+        }
+
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();

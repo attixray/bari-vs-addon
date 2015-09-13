@@ -326,6 +326,9 @@ namespace KOTEM.BariVSPackage
 
         private void SaveDocuments()
         {
+            if (!Properties.Settings.Default.KeepFilesOpen)
+                return;
+
             documents.Clear();
             foreach (Document document in GetDte2().Documents)
             {
@@ -335,6 +338,9 @@ namespace KOTEM.BariVSPackage
 
         private void ReloadDocuments()
         {
+            if (!Properties.Settings.Default.KeepFilesOpen)
+                return;
+
             var dte = GetDte2();
             foreach (var document in documents.Reverse())
             {
