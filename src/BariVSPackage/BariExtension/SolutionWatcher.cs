@@ -81,12 +81,13 @@ namespace KOTEM.BariVSPackage.BariExtension
                 deleteTimer.Start();
             }
 
-            if (e.ChangeType == WatcherChangeTypes.Renamed && extensions.Contains(ext))
+            if (e.ChangeType == WatcherChangeTypes.Renamed && (extensions.Contains(ext) || projExtensions.Contains(ext)))
             {
-                var fakeDeletes = deletedFiles.Where(d => Path.GetFileName(d).StartsWith(Path.GetFileName(e.FullPath)));
+                var fakeDeletes = deletedFiles.Where(d => Path.GetFileName(d).StartsWith(Path.GetFileName(e.FullPath))).ToList();
                 foreach (var fakeDelete in fakeDeletes)
                 {
                     deletedFiles.Remove(fakeDelete);
+                    FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
                 }
             }
         }

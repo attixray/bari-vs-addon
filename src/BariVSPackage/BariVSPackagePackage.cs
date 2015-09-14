@@ -53,6 +53,7 @@ namespace KOTEM.BariVSPackage
         private bool reloadNeededAfterDebug;
         private bool reBuildNeeded;
         private bool reloading;
+        private object savedStartUp;
 
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
@@ -300,9 +301,11 @@ namespace KOTEM.BariVSPackage
                     return;
                 }
 
-             //   GetDte().ExecuteCommand("File.SaveAll");
+                GetDte().ExecuteCommand("File.SaveAll");
 
-             //   GetDte2().ToolWindows.SolutionExplorer.Parent.Activate();
+                //   GetDte2().ToolWindows.SolutionExplorer.Parent.Activate();
+
+                SaveStartupProject();
 
                 SaveDocuments();
 
@@ -317,11 +320,24 @@ namespace KOTEM.BariVSPackage
                 }
 
                 System.Threading.Thread.Sleep(50);
-              //  ReloadDocuments();
+                ReloadDocuments();
+
+                ReloadStartupProject();
 
                 reloadNeededAfterDebug = false;
                 itemsToReload.Clear();
             }
+        }
+
+        private void ReloadStartupProject()
+        {
+            if (savedStartUp != null)
+                GetDte().Solution.SolutionBuild.StartupProjects = savedStartUp;
+        }
+
+        private void SaveStartupProject()
+        {
+            savedStartUp = GetDte().Solution.SolutionBuild.StartupProjects;
         }
 
         private void SaveDocuments()
@@ -368,7 +384,7 @@ namespace KOTEM.BariVSPackage
                     Guid guid;
                     solution2.GetGuidOfProject(selectedHierarchy, out guid);
                     solution.UnloadProject(ref guid, (uint)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
-                  //  solution.ReloadProject(ref guid);
+                    solution.ReloadProject(ref guid);
                 }
             }
         }
