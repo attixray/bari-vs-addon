@@ -57,41 +57,42 @@ namespace KOTEM.BariVSPackage.BariExtension
                             Debug.WriteLine("Not slncfg: " + vsStd97CmdID.ToString());
                         }
 
-
-                        if (allowedWhenDebugging.Contains(vsStd97CmdID.Value))
+                        if (commands.IsDebugging())
                         {
-                            if (commands.IsDebugging()) return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                            return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
                         }
-
-                        Action action;
-                        if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
+                        else
                         {
-                            var dte = provider.GetDte();
-                            dte.ExecuteCommand("File.SaveAll");
-
-                            action();
-                            return VSConstants.S_OK;
-
-                        }
-                        if (vsStd97CmdID.Value == VSConstants.VSStd97CmdID.Start)
-                        {
-                            if (normalStart > 0)
-                            {
-                                normalStart--;
-                                return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
-                            }
-                            else
+                            Action action;
+                            if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
                             {
                                 var dte = provider.GetDte();
                                 dte.ExecuteCommand("File.SaveAll");
-                                commands.BuildIfNeeded((g) =>
-                                {
-                                    normalStart = 2;
-                                    dte.ExecuteCommand("Debug.Start");
-                                    return VSConstants.S_OK;
 
-                                }, pguidCmdGroup);
+                                action();
                                 return VSConstants.S_OK;
+
+                            }
+                            if (vsStd97CmdID.Value == VSConstants.VSStd97CmdID.Start)
+                            {
+                                if (normalStart > 0)
+                                {
+                                    normalStart--;
+                                    return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                                }
+                                else
+                                {
+                                    var dte = provider.GetDte();
+                                    dte.ExecuteCommand("File.SaveAll");
+                                    commands.BuildIfNeeded((g) =>
+                                    {
+                                        normalStart = 2;
+                                        dte.ExecuteCommand("Debug.Start");
+                                        return VSConstants.S_OK;
+
+                                    }, pguidCmdGroup);
+                                    return VSConstants.S_OK;
+                                }
                             }
                         }
                     }
