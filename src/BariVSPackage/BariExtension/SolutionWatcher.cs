@@ -19,6 +19,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         }
 
         private FileSystemWatcher watcher;
+        private FileSystemWatcher yamlWatcher;
         private HashSet<string> extensions = new HashSet<string>(new [] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c" });
         private HashSet<string> projExtensions = new HashSet<string>(new[] {".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
         private Timer deleteTimer;
@@ -38,12 +39,28 @@ namespace KOTEM.BariVSPackage.BariExtension
                               NotifyFilter = NotifyFilters.LastAccess | NotifyFilters.LastWrite
                                              | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
                           };
-            watcher.Changed += FileSystemChanged;
-            watcher.Deleted += FileSystemChangedDelRename;
-            watcher.Created += FileSystemChanged;
-            watcher.Renamed += FileSystemChangedDelRename;
 
-            deleteTimer = new Timer(50);
+            yamlWatcher = new FileSystemWatcher(Directory.GetParent(srcDir).FullName)
+            {
+                EnableRaisingEvents = true,
+                IncludeSubdirectories = false,
+                InternalBufferSize = 64 * 1024, // this is max
+                Filter = "*.yaml",
+                NotifyFilter = NotifyFilters.LastAccess | NotifyFilters.LastWrite
+                               | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+            };
+
+            watcher.Changed += FileSystemChanged;
+            watcher.Deleted += FileSystemChangedDelRenameCreated;
+            watcher.Created += FileSystemChangedDelRenameCreated;
+            watcher.Renamed += FileSystemChangedDelRenameCreated;
+
+            yamlWatcher.Changed += FileSystemChanged;
+            yamlWatcher.Deleted += FileSystemChangedDelRenameCreated;
+            yamlWatcher.Created += FileSystemChangedDelRenameCreated;
+            yamlWatcher.Renamed += FileSystemChangedDelRenameCreated;
+
+            deleteTimer = new Timer(205);
             deleteTimer.Elapsed += deleteTimerOnElapsed;
         }
         
@@ -56,21 +73,15 @@ namespace KOTEM.BariVSPackage.BariExtension
                 if (extensions.Contains(ext))
                     Changed(this, EventArgs.Empty);
 
-                if (e.ChangeType == WatcherChangeTypes.Created && extensions.Contains(ext))
-                {
-                    if (ReloadNeeded != null)
-                        ReloadNeeded(this, new ReloadEventArgs(e.FullPath) {ReBuildNeeded = true});
-                }
-
                 if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
                 {
                     if (ReloadNeeded != null)
-                        ReloadNeeded(this, new ReloadEventArgs(e.FullPath));
+                        ReloadNeeded(this, new ReloadEventArgs(e.FullPath) {ReBuildNeeded = ext.EndsWith("yaml")});
                 }
             }
         }
 
-        private void FileSystemChangedDelRename(object sender, FileSystemEventArgs e)
+        private void FileSystemChangedDelRenameCreated(object sender, FileSystemEventArgs e)
         {
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
 
@@ -79,9 +90,10 @@ namespace KOTEM.BariVSPackage.BariExtension
                 deletedFiles.Add(e.FullPath);
                 deleteTimer.Stop();
                 deleteTimer.Start();
+                return;
             }
 
-            if (e.ChangeType == WatcherChangeTypes.Renamed && (extensions.Contains(ext) || projExtensions.Contains(ext)))
+            if ((e.ChangeType == WatcherChangeTypes.Renamed || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
             {
                 var fakeDeletes = deletedFiles.Where(d => Path.GetFileName(d).StartsWith(Path.GetFileName(e.FullPath))).ToList();
                 foreach (var fakeDelete in fakeDeletes)
@@ -108,8 +120,22 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             if (watcher != null)
             {
+                watcher.Changed -= FileSystemChanged;
+                watcher.Deleted -= FileSystemChangedDelRenameCreated;
+                watcher.Created -= FileSystemChangedDelRenameCreated;
+                watcher.Renamed -= FileSystemChangedDelRenameCreated;
                 watcher.Dispose();
                 watcher = null;
+            }
+
+            if (yamlWatcher != null)
+            {
+                yamlWatcher.Changed -= FileSystemChanged;
+                yamlWatcher.Deleted -= FileSystemChangedDelRenameCreated;
+                yamlWatcher.Created -= FileSystemChangedDelRenameCreated;
+                yamlWatcher.Renamed -= FileSystemChangedDelRenameCreated;
+                yamlWatcher.Dispose();
+                yamlWatcher = null;
             }
 
             if (deleteTimer != null)

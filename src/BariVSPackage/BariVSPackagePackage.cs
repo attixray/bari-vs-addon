@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Windows.Forms.VisualStyles;
 using EnvDTE80;
 using KOTEM.BariVSPackage.BariExtension.Option;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -53,7 +54,8 @@ namespace KOTEM.BariVSPackage
         private bool reloadNeededAfterDebug;
         private bool reBuildNeeded;
         private bool reloading;
-        private object savedStartUp;
+        private object[] savedStartUp;
+        private string activeDocument;
 
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
@@ -86,7 +88,7 @@ namespace KOTEM.BariVSPackage
             var solutionInfo = new SolutionInfo(GetDte());
 
             var solutionDir = solutionInfo.TargetWorkingDirectory;
-            if (Properties.Settings.Default.SetStartUpProject && solutionInfo.IsBariSolution && solutionDir != null)
+            if (solutionInfo.IsBariSolution && solutionDir != null)
             {
                 UnRegisterPriorityCommandTarget();
                 UnRegisterKeyboardHook();
@@ -101,7 +103,7 @@ namespace KOTEM.BariVSPackage
             var solutionInfo = new SolutionInfo(GetDte());
 
             var solutionDir = solutionInfo.TargetWorkingDirectory;
-            if (Properties.Settings.Default.SetStartUpProject && solutionInfo.IsBariSolution && solutionDir != null)
+            if (solutionInfo.IsBariSolution && solutionDir != null)
             {
                 try
                 {
@@ -118,28 +120,29 @@ namespace KOTEM.BariVSPackage
             }
         }
 
-
-
         private void SetStartUpProject(SolutionInfo solutionInfo)
         {
-            var startProject =
-                solutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
+            if (Properties.Settings.Default.SetStartUpProject)
+            {
+                var startProject =
+                    solutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
 
-            if (string.IsNullOrEmpty(startProject)) return;
+                if (string.IsNullOrEmpty(startProject)) return;
 
-            var startupProject = GetProject(solutionInfo, startProject);
+                var startupProject = GetProject(solutionInfo, startProject);
 
-            if (startupProject == null) return;
+                if (startupProject == null) return;
 
-            solutionInfo.Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
+                solutionInfo.Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
 
-            startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value =
-                (int)StartAction.Program;
-            startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value =
-                Path.GetDirectoryName(solutionInfo.Solution.FileName) + "\\" + solutionInfo.BariConfig.Target
-                + "\\" + solutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
-            startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartArguments").Value =
-                Properties.Settings.Default.StartArguments;
+                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value =
+                    (int)StartAction.Program;
+                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value =
+                    Path.GetDirectoryName(solutionInfo.Solution.FileName) + "\\" + solutionInfo.BariConfig.Target
+                    + "\\" + solutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
+                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartArguments").Value =
+                    Properties.Settings.Default.StartArguments;
+            }
         }
 
         private Project GetProject(SolutionInfo solutionInfo, string name)
@@ -178,7 +181,7 @@ namespace KOTEM.BariVSPackage
 
         private void RegisterReloadTimer()
         {
-            reloadTimer = new Timer(200);
+            reloadTimer = new Timer(450);
             reloadTimer.AutoReset = false;
             reloadTimer.Elapsed += ReloadTimerElapsed;
         }
@@ -187,6 +190,7 @@ namespace KOTEM.BariVSPackage
         {
             if (dialogKiller != null)
             {
+                reloadTimer.Stop();
                 reloadTimer.Elapsed -= ReloadTimerElapsed;
                 reloadTimer.Dispose();
                 reloadTimer = null;
@@ -275,15 +279,21 @@ namespace KOTEM.BariVSPackage
                 MessageBox.Show("You shuold build your application!", "File modification detected", MessageBoxButtons.OK);
                 reBuildNeeded = false;
             }
-
-            if (Properties.Settings.Default.PromptReload)
-            {
-                if (MessageBox.Show("Do you want to reload projects/solution?", "File modification detected", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                    Reload();
-            }
             else
-                Reload();
-
+            {
+                if (!itemsToReload.All(i => i.EndsWith(".csproj") || i.EndsWith(".fsproj") || i.EndsWith(".vcxproj")))
+                {
+                    if (Properties.Settings.Default.PromptReload)
+                    {
+                        if (
+                            MessageBox.Show("Do you want to reload projects/solution?", "File modification detected",
+                                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                            Reload();
+                    }
+                    else
+                        Reload();
+                }
+            }
             reloading = false;
         }
 
@@ -301,22 +311,28 @@ namespace KOTEM.BariVSPackage
                     return;
                 }
 
-                GetDte().ExecuteCommand("File.SaveAll");
-
-                //   GetDte2().ToolWindows.SolutionExplorer.Parent.Activate();
+                GetDte().Documents.SaveAll();
 
                 SaveStartupProject();
 
                 SaveDocuments();
 
-                foreach (var item in itemsToReload)
+                if (itemsToReload.Any(item => item.ToLower().EndsWith(".sln") || item.ToLower().EndsWith(".yaml")))
+                    ReloadSolution(solutionInfo);
+                else
                 {
-                    if (item.ToLower().EndsWith(".sln") || item.ToLower().EndsWith(".yaml"))
-                    {
+                    var items = itemsToReload.Select(project => GetProject(solutionInfo, GetProjectName(solutionInfo, project)));
+                    items = items.Where(i => i != null).Distinct();
+
+                    if (items.Count() > (solutionInfo.Solution.Projects.Count / 2))
                         ReloadSolution(solutionInfo);
-                        break;
+                    else
+                    {
+                        foreach (var item in items)
+                        {
+                            ReloadProject(solutionInfo, item);
+                        }
                     }
-                    ReloadProject(solutionInfo, item);
                 }
 
                 System.Threading.Thread.Sleep(50);
@@ -332,18 +348,25 @@ namespace KOTEM.BariVSPackage
         private void ReloadStartupProject()
         {
             if (savedStartUp != null)
-                GetDte().Solution.SolutionBuild.StartupProjects = savedStartUp;
+            {
+                if (savedStartUp.Length == 1)
+                    GetDte().Solution.SolutionBuild.StartupProjects = savedStartUp[0];
+                else
+                    GetDte().Solution.SolutionBuild.StartupProjects = savedStartUp;
+            }
         }
 
         private void SaveStartupProject()
         {
-            savedStartUp = GetDte().Solution.SolutionBuild.StartupProjects;
+            savedStartUp = GetDte().Solution.SolutionBuild.StartupProjects as object[];
         }
 
         private void SaveDocuments()
         {
             if (!Properties.Settings.Default.KeepFilesOpen)
                 return;
+
+            activeDocument = GetDte().ActiveDocument.FullName;
 
             documents.Clear();
             foreach (Document document in GetDte2().Documents)
@@ -358,34 +381,36 @@ namespace KOTEM.BariVSPackage
                 return;
 
             var dte = GetDte2();
+            Window activeWindow = null;
             foreach (var document in documents.Reverse())
             {
                 if (File.Exists(document))
                 {
-                    dte.ItemOperations.OpenFile(document);
-                    System.Threading.Thread.Sleep(20);
+                    var win = dte.ItemOperations.OpenFile(document);
+                    if (document.Equals(activeDocument))
+                        activeWindow = win;
+                    System.Threading.Thread.Sleep(10);
                 }
             }
+
+            if (activeWindow != null)
+                activeWindow.Activate();
         }
 
-        private void ReloadProject(SolutionInfo solutionInfo, string project)
+        private void ReloadProject(SolutionInfo solutionInfo, Project projectRef)
         {
             var solution = base.GetService(typeof(SVsSolution)) as IVsSolution4;
             var solution2 = solution as IVsSolution2;
 
-            var projectRef = GetProject(solutionInfo, GetProjectName(solutionInfo, project));
-            if (projectRef != null)
-            {
-                IVsHierarchy selectedHierarchy;
-                solution2.GetProjectOfUniqueName(projectRef.UniqueName, out selectedHierarchy);
+            IVsHierarchy selectedHierarchy;
+            solution2.GetProjectOfUniqueName(projectRef.UniqueName, out selectedHierarchy);
 
-                if (selectedHierarchy != null)
-                {
-                    Guid guid;
-                    solution2.GetGuidOfProject(selectedHierarchy, out guid);
-                    solution.UnloadProject(ref guid, (uint)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
-                    solution.ReloadProject(ref guid);
-                }
+            if (selectedHierarchy != null)
+            {
+                Guid guid;
+                solution2.GetGuidOfProject(selectedHierarchy, out guid);
+                solution.UnloadProject(ref guid, (uint)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
+                solution.ReloadProject(ref guid);
             }
         }
 
