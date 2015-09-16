@@ -36,6 +36,14 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
             set { Properties.Settings.Default.KeepFilesOpen = value; }
         }
 
+        [Category("Misc")]
+        [Description("Verbose bari output")]
+        public bool Verbose
+        {
+            get { return Properties.Settings.Default.Verbose; }
+            set { Properties.Settings.Default.Verbose = value; }
+        }
+
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();

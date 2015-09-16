@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using KOTEM.BariVSPackage.Properties;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -23,9 +24,9 @@ namespace KOTEM.BariVSPackage.BariExtension
             this.workingDirectory = workingDirectory;
         }
 
-        public int Execute(string actionName, bool forceAction, Func<bool,int> after = null)
+        public int Execute(string actionName, bool forceAction, Func<bool, int> after = null)
         {
-            var arguments = string.Format("--target {0} {1} {2}", goal, actionName, productName);
+            var arguments = string.Format("{0} --target {1} {2} {3}", Settings.Default.Verbose ? " -v " : string.Empty, goal, actionName, productName);
             ShowOutput(string.Format("{0} {1}", bariPath, arguments));
             var processStartInfo = new ProcessStartInfo(
                 bariPath,
@@ -48,24 +49,25 @@ namespace KOTEM.BariVSPackage.BariExtension
 
             DispatcherFrame frame = new DispatcherFrame();
 
-            Task.Factory.StartNew(() => { 
-            while (true)
+            Task.Factory.StartNew(() =>
             {
-                proc.WaitForExit(100);
-                if (isCancellationRequested)
+                while (true)
                 {
-                    proc.Kill();
-                    ShowOutput("Build cancelled.");
-                    cancelled = true;
-                    frame.Continue = false;
-                    break;
+                    proc.WaitForExit(100);
+                    if (isCancellationRequested)
+                    {
+                        proc.Kill();
+                        ShowOutput("Build cancelled.");
+                        cancelled = true;
+                        frame.Continue = false;
+                        break;
+                    }
+                    if (proc.HasExited)
+                    {
+                        frame.Continue = false;
+                        break;
+                    }
                 }
-                if (proc.HasExited)
-                {
-                    frame.Continue = false;
-                    break;
-                }
-            }
             });
             Dispatcher.PushFrame(frame);
 
