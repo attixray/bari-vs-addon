@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Windows.Forms.VisualStyles;
 using EnvDTE80;
 using KOTEM.BariVSPackage.BariExtension.Option;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -49,13 +48,15 @@ namespace KOTEM.BariVSPackage
         private ReloadDialogKiller dialogKiller;
         private Timer reloadTimer;
         private readonly HashSet<string> itemsToReload = new HashSet<string>();
-        private readonly HashSet<string> documents = new HashSet<string>();
+        private readonly Dictionary<string, bool> documents = new Dictionary<string, bool>();
 
         private bool reloadNeededAfterDebug;
         private bool reBuildNeeded;
         private bool reloading;
         private object[] savedStartUp;
         private string activeDocument;
+        private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c" });
+        private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
@@ -247,9 +248,15 @@ namespace KOTEM.BariVSPackage
 
             if (!Directory.Exists(srcDir)) return;
 
-            solutionWatcher = new SolutionWatcher(srcDir);
+            solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions);
             solutionWatcher.Changed += SolutionWatcherOnChanged;
             solutionWatcher.ReloadNeeded += SolutionWatcherOnReloadNeeded;
+        }
+
+        private void SolutionWatcherOnChanged(object sender, SolutionWatcher.ReloadEventArgs e)
+        {
+            commands.IsBuildNeeded = true;
+            itemsToReload.Add(e.ItemToReload);
         }
 
         private void SolutionWatcherOnReloadNeeded(object sender, SolutionWatcher.ReloadEventArgs e)
@@ -281,7 +288,7 @@ namespace KOTEM.BariVSPackage
             }
             else
             {
-                if (!itemsToReload.All(i => i.EndsWith(".csproj") || i.EndsWith(".fsproj") || i.EndsWith(".vcxproj")))
+                if (!itemsToReload.All(i => projExtensions.Contains(Path.GetExtension(i))))
                 {
                     if (Properties.Settings.Default.PromptReload)
                     {
@@ -293,6 +300,8 @@ namespace KOTEM.BariVSPackage
                     else
                         Reload();
                 }
+                else
+                    itemsToReload.Clear();
             }
             reloading = false;
         }
@@ -313,32 +322,30 @@ namespace KOTEM.BariVSPackage
 
                 GetDte().Documents.SaveAll();
 
-                SaveStartupProject();
+                var onlySolution =
+                    itemsToReload.Any(item => item.ToLower().EndsWith(".sln") || item.ToLower().EndsWith(".yaml"));
 
-                SaveDocuments();
+                var items = itemsToReload.Where(file => extensions.Contains(Path.GetExtension(file))).Select(project => GetProject(solutionInfo, GetProjectName(solutionInfo, project)));
+                items = items.Where(i => i != null).Distinct();
 
-                if (itemsToReload.Any(item => item.ToLower().EndsWith(".sln") || item.ToLower().EndsWith(".yaml")))
+                onlySolution = onlySolution || (items.Count() > (solutionInfo.Solution.Projects.Count / 2));
+
+                if (onlySolution)
                     ReloadSolution(solutionInfo);
                 else
                 {
-                    var items = itemsToReload.Select(project => GetProject(solutionInfo, GetProjectName(solutionInfo, project)));
-                    items = items.Where(i => i != null).Distinct();
+                    SaveDocuments(solutionInfo, items.Select(p => p.UniqueName).ToList());
+                    SaveStartupProject();
 
-                    if (items.Count() > (solutionInfo.Solution.Projects.Count / 2))
-                        ReloadSolution(solutionInfo);
-                    else
+                    foreach (var item in items)
                     {
-                        foreach (var item in items)
-                        {
-                            ReloadProject(solutionInfo, item);
-                        }
+                        ReloadProject(solutionInfo, item);
                     }
+                    System.Threading.Thread.Sleep(50);
+
+                    ReloadDocuments();
+                    ReloadStartupProject();
                 }
-
-                System.Threading.Thread.Sleep(50);
-                ReloadDocuments();
-
-                ReloadStartupProject();
 
                 reloadNeededAfterDebug = false;
                 itemsToReload.Clear();
@@ -361,18 +368,26 @@ namespace KOTEM.BariVSPackage
             savedStartUp = GetDte().Solution.SolutionBuild.StartupProjects as object[];
         }
 
-        private void SaveDocuments()
+        private void SaveDocuments(SolutionInfo solutionInfo, IEnumerable<string> reopenedProjects)
         {
             if (!Properties.Settings.Default.KeepFilesOpen)
                 return;
 
+            var projects = reopenedProjects.Select(p => GetProjectName(solutionInfo, p));
             activeDocument = GetDte().ActiveDocument.FullName;
 
             documents.Clear();
-            foreach (Document document in GetDte2().Documents)
+            foreach (var document in GetDte2().Documents.OfType<Document>().Where(d => projects.Contains(GetProjectName(solutionInfo, d.FullName))))
             {
-                documents.Add(document.FullName);
+                object pinned = null;
+                var frame = GetWindowFrameFromDocument(document.FullName);
+                if (frame != null)
+                    frame.GetProperty((int)__VSFPROPID5.VSFPROPID_IsPinned, out pinned);
+
+                documents.Add(document.FullName, pinned != null && (bool)pinned);
             }
+
+            System.Threading.Thread.Sleep(50);
         }
 
         private void ReloadDocuments()
@@ -384,11 +399,16 @@ namespace KOTEM.BariVSPackage
             Window activeWindow = null;
             foreach (var document in documents.Reverse())
             {
-                if (File.Exists(document))
+                if (File.Exists(document.Key))
                 {
-                    var win = dte.ItemOperations.OpenFile(document);
-                    if (document.Equals(activeDocument))
+                    var win = dte.ItemOperations.OpenFile(document.Key);
+                    if (document.Key.Equals(activeDocument))
                         activeWindow = win;
+
+                    var frame = GetWindowFrameFromDocument(document.Key);
+                    if (frame != null)
+                        frame.SetProperty((int)__VSFPROPID5.VSFPROPID_IsPinned, document.Value);
+
                     System.Threading.Thread.Sleep(10);
                 }
             }
@@ -410,6 +430,7 @@ namespace KOTEM.BariVSPackage
                 Guid guid;
                 solution2.GetGuidOfProject(selectedHierarchy, out guid);
                 solution.UnloadProject(ref guid, (uint)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
+                System.Threading.Thread.Sleep(50);
                 solution.ReloadProject(ref guid);
             }
         }
@@ -440,11 +461,6 @@ namespace KOTEM.BariVSPackage
             solution.OpenSolutionFile((int)__VSSLNOPENOPTIONS.SLNOPENOPT_AddToCurrent, slnName);
         }
 
-        private void SolutionWatcherOnChanged(object sender, EventArgs eventArgs)
-        {
-            commands.IsBuildNeeded = true;
-        }
-
         private void UnRegisterPriorityCommandTarget()
         {
             var vsRegisterPriorityCommandTarget =
@@ -461,6 +477,25 @@ namespace KOTEM.BariVSPackage
                 (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
             if (vsRegisterPriorityCommandTarget == null) return;
             vsRegisterPriorityCommandTarget.RegisterPriorityCommandTarget(0, target, out registerCookie);
+        }
+
+        private IVsWindowFrame GetWindowFrameFromDocument(string path)
+        {
+            var shell = GetService<IVsUIShell>();
+            IEnumWindowFrames frames;
+            shell.GetDocumentWindowEnum(out frames);
+
+            if (frames == null)
+                return null;
+
+            foreach (IVsWindowFrame enumWindowFrame in ComUtilities.EnumerableFrom(frames))
+            {
+                object doc;
+                enumWindowFrame.GetProperty((int)__VSFPROPID.VSFPROPID_pszMkDocument, out doc);
+                if (doc is string && doc.ToString().ToLower().Equals(path.ToLower()))
+                    return enumWindowFrame;
+            }
+            return null;
         }
 
         public DTE GetDte()

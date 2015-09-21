@@ -20,16 +20,19 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private FileSystemWatcher watcher;
         private FileSystemWatcher yamlWatcher;
-        private HashSet<string> extensions = new HashSet<string>(new [] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c" });
-        private HashSet<string> projExtensions = new HashSet<string>(new[] {".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
+        private readonly HashSet<string> extensions;
+        private readonly HashSet<string> projExtensions;
         private Timer deleteTimer;
-        private readonly IList<string> deletedFiles = new List<string>(); 
+        private readonly IList<string> deletedFiles = new List<string>();
 
-        public event EventHandler Changed;
+        public event EventHandler<ReloadEventArgs> Changed;
         public event EventHandler<ReloadEventArgs> ReloadNeeded;
 
-        public SolutionWatcher(string srcDir)
+        public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension)
         {
+            extensions = new HashSet<string>(extension);
+            projExtensions = new HashSet<string>(projectExtension);
+
             watcher = new FileSystemWatcher(srcDir)
                           {
                               EnableRaisingEvents = true,
@@ -71,7 +74,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
 
                 if (extensions.Contains(ext))
-                    Changed(this, EventArgs.Empty);
+                    Changed(this, new ReloadEventArgs(e.FullPath));
 
                 if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
                 {
