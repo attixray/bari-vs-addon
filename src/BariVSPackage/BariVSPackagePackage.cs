@@ -38,7 +38,7 @@ namespace KOTEM.BariVSPackage
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
-    public sealed class BariVsPackagePackage : Package, IVsServiceProvider
+    public sealed class BariVsPackagePackage : Package, IDisposable, IVsServiceProvider
     {
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
@@ -189,7 +189,7 @@ namespace KOTEM.BariVSPackage
 
         private void UnRegisterReloadTimer()
         {
-            if (dialogKiller != null)
+            if (reloadTimer != null)
             {
                 reloadTimer.Stop();
                 reloadTimer.Elapsed -= ReloadTimerElapsed;
@@ -515,21 +515,30 @@ namespace KOTEM.BariVSPackage
 
         protected override void Dispose(bool disposing)
         {
-            GetDte().Events.SolutionEvents.Opened -= SolutionEvents_Opened;
-            GetDte().Events.SolutionEvents.BeforeClosing -= SolutionEvents_BeforeClosing;
-            GetDte().Events.DebuggerEvents.OnEnterDesignMode -= DebuggerEvents_OnEnterDesignMode;
+            if (disposing)
+            {
+                GetDte().Events.SolutionEvents.Opened -= SolutionEvents_Opened;
+                GetDte().Events.SolutionEvents.BeforeClosing -= SolutionEvents_BeforeClosing;
+                GetDte().Events.DebuggerEvents.OnEnterDesignMode -= DebuggerEvents_OnEnterDesignMode;
 
-            UnRegisterPriorityCommandTarget();
+                UnRegisterPriorityCommandTarget();
 
-            base.Dispose(disposing);
+                base.Dispose(disposing);
 
-            UnRegisterDialogKiller();
+                UnRegisterDialogKiller();
 
-            UnRegisterKeyboardHook();
+                UnRegisterKeyboardHook();
 
-            UnRegisterFileSystemWatcher();
+                UnRegisterFileSystemWatcher();
+
+                UnRegisterReloadTimer();
+            }
         }
 
-
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
     }
 }

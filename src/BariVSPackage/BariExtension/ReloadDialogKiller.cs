@@ -7,7 +7,7 @@ namespace KOTEM.BariVSPackage.BariExtension
     public class ReloadDialogKiller : IDisposable
     {
         [StructLayout(LayoutKind.Sequential)]
-        public struct CWPRETSTRUCT
+        private struct CWPRETSTRUCT
         {
             public IntPtr lResult;
             public IntPtr lParam;
@@ -67,7 +67,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             return CallNextHookEx(hHook, nCode, wParam, lParam);
         }
 
-        protected void Dispose(bool disposing)
+        protected virtual void Dispose(bool disposing)
         {
             if (disposing)
             {

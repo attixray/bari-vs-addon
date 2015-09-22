@@ -5,7 +5,7 @@ using System.Windows.Forms;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
-    internal class KeyboardHook : IDisposable
+    internal sealed class KeyboardHook : IDisposable
     {
         private Action<Keys> handleKeyPressed;
         private HookProc keyboardHookProcedure;

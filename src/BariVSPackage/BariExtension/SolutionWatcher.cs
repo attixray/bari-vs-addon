@@ -6,12 +6,12 @@ using System.Timers;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
-    public class SolutionWatcher : IDisposable
+    internal class SolutionWatcher : IDisposable
     {
         public class ReloadEventArgs : EventArgs
         {
             public string ItemToReload { get; set; }
-            public bool ReBuildNeeded { get; set; } 
+            public bool ReBuildNeeded { get; set; }
             public ReloadEventArgs(string item)
             {
                 ItemToReload = item;
@@ -66,7 +66,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             deleteTimer = new Timer(205);
             deleteTimer.Elapsed += deleteTimerOnElapsed;
         }
-        
+
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
         {
             if (Changed != null)
@@ -79,7 +79,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
                 {
                     if (ReloadNeeded != null)
-                        ReloadNeeded(this, new ReloadEventArgs(e.FullPath) {ReBuildNeeded = ext.EndsWith("yaml")});
+                        ReloadNeeded(this, new ReloadEventArgs(e.FullPath) { ReBuildNeeded = ext.EndsWith("yaml") });
                 }
             }
         }
@@ -113,41 +113,50 @@ namespace KOTEM.BariVSPackage.BariExtension
             foreach (var deletedFile in deletedFiles.Where(f => extensions.Contains((Path.GetExtension(f) ?? string.Empty).ToLower())))
             {
                 if (ReloadNeeded != null)
-                    ReloadNeeded(this, new ReloadEventArgs(deletedFile) { ReBuildNeeded = true });    
+                    ReloadNeeded(this, new ReloadEventArgs(deletedFile) { ReBuildNeeded = true });
             }
 
             deletedFiles.Clear();
         }
 
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (watcher != null)
+                {
+                    watcher.Changed -= FileSystemChanged;
+                    watcher.Deleted -= FileSystemChangedDelRenameCreated;
+                    watcher.Created -= FileSystemChangedDelRenameCreated;
+                    watcher.Renamed -= FileSystemChangedDelRenameCreated;
+                    watcher.Dispose();
+                    watcher = null;
+                }
+
+                if (yamlWatcher != null)
+                {
+                    yamlWatcher.Changed -= FileSystemChanged;
+                    yamlWatcher.Deleted -= FileSystemChangedDelRenameCreated;
+                    yamlWatcher.Created -= FileSystemChangedDelRenameCreated;
+                    yamlWatcher.Renamed -= FileSystemChangedDelRenameCreated;
+                    yamlWatcher.Dispose();
+                    yamlWatcher = null;
+                }
+
+                if (deleteTimer != null)
+                {
+                    deleteTimer.Stop();
+                    deleteTimer.Elapsed -= deleteTimerOnElapsed;
+                    deleteTimer.Dispose();
+                    deleteTimer = null;
+                }
+            }
+        }
+
         public void Dispose()
         {
-            if (watcher != null)
-            {
-                watcher.Changed -= FileSystemChanged;
-                watcher.Deleted -= FileSystemChangedDelRenameCreated;
-                watcher.Created -= FileSystemChangedDelRenameCreated;
-                watcher.Renamed -= FileSystemChangedDelRenameCreated;
-                watcher.Dispose();
-                watcher = null;
-            }
-
-            if (yamlWatcher != null)
-            {
-                yamlWatcher.Changed -= FileSystemChanged;
-                yamlWatcher.Deleted -= FileSystemChangedDelRenameCreated;
-                yamlWatcher.Created -= FileSystemChangedDelRenameCreated;
-                yamlWatcher.Renamed -= FileSystemChangedDelRenameCreated;
-                yamlWatcher.Dispose();
-                yamlWatcher = null;
-            }
-
-            if (deleteTimer != null)
-            {
-                deleteTimer.Stop();
-                deleteTimer.Elapsed -= deleteTimerOnElapsed;
-                deleteTimer.Dispose();
-                deleteTimer = null;
-            }
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
     }
 }
