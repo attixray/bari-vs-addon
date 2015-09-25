@@ -31,12 +31,28 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             //var dte = GetDte();
             //dte.StatusBar.Progress(true, "Building...");
-        }
 
+            //NEW
+            //var  statusBar = owner.GetService<IVsStatusbar>();
+
+            //object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
+            //statusBar.Animation(5, ref icon);
+            
+            //statusBar.SetText("Build started...");
+        }
+        
         private void HideBuildStatus(bool cancelled)
         {
             //var dte = GetDte();
             //dte.StatusBar.Progress(false);
+            
+            //NEW
+            //var statusBar = owner.GetService<IVsStatusbar>();
+
+            //object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_General;
+            //statusBar.Animation(0, ref icon);
+
+            //statusBar.SetText("Build succeeded");
         }
 
         public void ExecuteBariBuild()

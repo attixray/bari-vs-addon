@@ -42,6 +42,9 @@ namespace KOTEM.BariVSPackage.BariExtension
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool DestroyWindow(IntPtr hwnd);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool CloseWindow(IntPtr hWnd);
+
         public ReloadDialogKiller()
         {
             messageHookProcedure = MessageHookProc;
@@ -60,8 +63,12 @@ namespace KOTEM.BariVSPackage.BariExtension
                 int nLength = GetWindowTextLength(msg.hwnd);
                 var dialogName = new StringBuilder(nLength);
                 GetWindowText(msg.hwnd, dialogName, dialogName.Capacity);
-                if (dialogName.ToString().ToLower().StartsWith("file modification"))
+                var name = dialogName.ToString().ToLower();
+                if (name.StartsWith("file modification") || name.StartsWith("conflicting file modification"))
+                {
                     DestroyWindow(msg.hwnd);
+                    CloseWindow(msg.hwnd);
+                }
             }
 
             return CallNextHookEx(hHook, nCode, wParam, lParam);

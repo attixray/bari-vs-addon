@@ -1,10 +1,14 @@
 ﻿using System;
+using System.CodeDom;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using EnvDTE80;
 using KOTEM.BariVSPackage.BariExtension.Option;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Shell;
 using KOTEM.BariVSPackage.BariExtension;
@@ -57,6 +61,15 @@ namespace KOTEM.BariVSPackage
         private string activeDocument;
         private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
+
+        internal const int IDOK = 1;
+        internal const int IDCANCEL = 2;
+        internal const int IDABORT = 3;
+        internal const int IDRETRY = 4;
+        internal const int IDIGNORE = 5;
+        internal const int IDYES = 6;
+        internal const int IDNO = 7;
+        internal const int IDCLOSE = 8;
 
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
@@ -276,6 +289,29 @@ namespace KOTEM.BariVSPackage
             ProcessReload();
         }
 
+        private int ShowMessageBox(string message)
+        {
+            var uiShell = GetService(typeof(IVsUIShell)) as IVsUIShell;
+            Guid clsid = Guid.Empty;
+            int result = VSConstants.S_FALSE;
+            
+            if (uiShell != null)
+            {
+                uiShell.ShowMessageBox(0,
+                    ref clsid,
+                    "File modification detected",
+                    message,
+                    string.Empty,
+                    0,
+                    OLEMSGBUTTON.OLEMSGBUTTON_YESNO,
+                    OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST,
+                    OLEMSGICON.OLEMSGICON_WARNING,
+                    0,        // false
+                    out result);
+            }
+            return result;
+        }
+
         private void ProcessReload()
         {
             reloadTimer.Stop();
@@ -283,7 +319,10 @@ namespace KOTEM.BariVSPackage
 
             if (reBuildNeeded)
             {
-                MessageBox.Show("You shuold build your application!", "File modification detected", MessageBoxButtons.OK);
+                if (ShowMessageBox("Do you want to build your solution?") == IDYES)
+                {
+                    BuildSolution();
+                }
                 reBuildNeeded = false;
             }
             else
@@ -292,9 +331,7 @@ namespace KOTEM.BariVSPackage
                 {
                     if (Properties.Settings.Default.PromptReload)
                     {
-                        if (
-                            MessageBox.Show("Do you want to reload projects/solution?", "File modification detected",
-                                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
                             Reload();
                     }
                     else
@@ -304,6 +341,15 @@ namespace KOTEM.BariVSPackage
                     itemsToReload.Clear();
             }
             reloading = false;
+        }
+
+        private void BuildSolution()
+        {
+            GetDte().Documents.SaveAll();
+            commands.BuildIfNeeded((g) =>
+            {
+                return VSConstants.S_OK;
+            }, Guid.Empty);
         }
 
         private void Reload()
@@ -377,7 +423,7 @@ namespace KOTEM.BariVSPackage
             activeDocument = GetDte().ActiveDocument.FullName;
 
             documents.Clear();
-            foreach (var document in GetDte2().Documents.OfType<Document>().Where(d => projects.Contains(GetProjectName(solutionInfo, d.FullName))))
+            foreach (var document in GetDte().Documents.OfType<Document>().Where(d => projects.Contains(GetProjectName(solutionInfo, d.FullName))))
             {
                 object pinned = null;
                 var frame = GetWindowFrameFromDocument(document.FullName);
@@ -395,7 +441,7 @@ namespace KOTEM.BariVSPackage
             if (!Properties.Settings.Default.KeepFilesOpen)
                 return;
 
-            var dte = GetDte2();
+            var dte = GetDte();
             Window activeWindow = null;
             foreach (var document in documents.Reverse())
             {
@@ -441,13 +487,10 @@ namespace KOTEM.BariVSPackage
             var srcDir = Path.Combine(bariDir, "src");
 
             projectFile = projectFile.Remove(0, srcDir.Length + 1);
-
             projectFile = projectFile.Remove(0, projectFile.IndexOf("\\") + 1);
 
             if (projectFile.StartsWith("tests"))
-            {
                 projectFile = projectFile.Remove(0, projectFile.IndexOf("\\") + 1);
-            }
 
             projectFile = projectFile.Substring(0, projectFile.IndexOf("\\"));
             return projectFile;
@@ -498,14 +541,12 @@ namespace KOTEM.BariVSPackage
             return null;
         }
 
+        private DTE dte;
         public DTE GetDte()
         {
-            return GetService<DTE>();
-        }
-
-        public DTE2 GetDte2()
-        {
-            return GetDte() as DTE2;
+            if (dte == null)
+                dte = GetService<DTE>();
+            return dte;
         }
 
         public T GetService<T>()

@@ -63,7 +63,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             yamlWatcher.Created += FileSystemChangedDelRenameCreated;
             yamlWatcher.Renamed += FileSystemChangedDelRenameCreated;
 
-            deleteTimer = new Timer(205);
+            deleteTimer = new Timer(351);
             deleteTimer.Elapsed += deleteTimerOnElapsed;
         }
 

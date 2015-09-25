@@ -1,12 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
-using IServiceProvider = Microsoft.VisualStudio.OLE.Interop.IServiceProvider;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -39,11 +35,6 @@ namespace KOTEM.BariVSPackage.BariExtension
                                     {VSConstants.VSStd97CmdID.RebuildSel, commands.ExecuteBariRebuild}
                                 };
 
-            var allowedWhenDebugging = new HashSet<VSConstants.VSStd97CmdID>
-                                            {
-                                                VSConstants.VSStd97CmdID.Stop,
-                                                VSConstants.VSStd97CmdID.Start  // this means 'Continue' when debugging...
-                                            };
             if (pguidCmdGroup == VSConstants.GUID_VSStandardCommandSet97)
             {
                 var vsStd97CmdID = ToVSStd97CmdID(nCmdID);
@@ -67,7 +58,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                             if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
                             {
                                 var dte = provider.GetDte();
-                                dte.ExecuteCommand("File.SaveAll");
+                                dte.Documents.SaveAll();
 
                                 action();
                                 return VSConstants.S_OK;
@@ -83,7 +74,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                                 else
                                 {
                                     var dte = provider.GetDte();
-                                    dte.ExecuteCommand("File.SaveAll");
+                                    dte.Documents.SaveAll();
                                     commands.BuildIfNeeded((g) =>
                                     {
                                         normalStart = 2;
