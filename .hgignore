@@ -8,3 +8,4 @@ relre:^src/.*\.suo$
 relre:^src/.*\.cache$
 relre:^src/.*\.user$
 *.orig
+*.rej
