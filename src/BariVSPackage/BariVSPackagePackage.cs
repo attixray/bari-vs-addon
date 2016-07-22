@@ -57,9 +57,10 @@ namespace KOTEM.BariVSPackage
         private bool reloadNeededAfterDebug;
         private bool reBuildNeeded;
         private bool reloading;
+        private bool commandRunning;
         private object[] savedStartUp;
         private string activeDocument;
-        private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg" });
+        private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
         internal const int IDOK = 1;
@@ -81,12 +82,36 @@ namespace KOTEM.BariVSPackage
             base.Initialize();
 
             commands = new Commands(this);
+            commands.CommandFinished += commands_CommandFinished;
+            commands.CommandStarted += commands_CommandStarted;
 
             target = new CommandTarget(this, commands, this);
+            target.CommandSent += target_CommandSent;
+            
+
+            RegisterDialogKiller();
 
             GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
             GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
             GetDte().Events.DebuggerEvents.OnEnterDesignMode += DebuggerEvents_OnEnterDesignMode;
+        }
+
+        private void target_CommandSent(object sender, CommandTarget.CommandTargetEventArgs e)
+        {
+            if (e.Command == "Delete")
+            {
+            }
+        }
+
+        private void commands_CommandStarted(object sender, BariShell.BariCommandArgs e)
+        {
+            commandRunning = true;
+        }
+
+        private void commands_CommandFinished(object sender, BariShell.BariCommandArgs e)
+        {
+            commandRunning = false;
+            ProcessReload();
         }
 
         private void DebuggerEvents_OnEnterDesignMode(dbgEventReason Reason)
@@ -107,7 +132,7 @@ namespace KOTEM.BariVSPackage
                 UnRegisterPriorityCommandTarget();
                 UnRegisterKeyboardHook();
                 UnRegisterFileSystemWatcher();
-                UnRegisterDialogKiller();
+                //UnRegisterDialogKiller();
                 UnRegisterReloadTimer();
             }
         }
@@ -124,7 +149,7 @@ namespace KOTEM.BariVSPackage
                     RegisterPriorityCommandTarget();
                     RegisterKeyboardHook();
                     RegisterFileSystemWatcher();
-                    RegisterDialogKiller();
+                    // RegisterDialogKiller();
                     RegisterReloadTimer();
                     SetStartUpProject(solutionInfo);
                 }
@@ -268,19 +293,33 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionWatcherOnChanged(object sender, SolutionWatcher.ReloadEventArgs e)
         {
+            Debug.WriteLine("SolutionWatcherOnChanged");
             commands.IsBuildNeeded = true;
-            itemsToReload.Add(e.ItemToReload);
+            foreach (var VARIABLE in e.ItemsToReload)
+            {
+                itemsToReload.Add(VARIABLE);
+            }
         }
 
         private void SolutionWatcherOnReloadNeeded(object sender, SolutionWatcher.ReloadEventArgs e)
         {
-            if (reloading)
+            if (reloading || (!commandRunning && e.ItemsToReload.All(f => projExtensions.Contains(Path.GetExtension(f).ToLower()))))
+            {
                 return;
+            }
+
+            Debug.WriteLine("SolutionWatcherOnReloadNeeded");
 
             reloadTimer.Stop();
             if (e.ReBuildNeeded)
+            {
+                commands.IsBuildNeeded = true;
                 reBuildNeeded = true;
-            itemsToReload.Add(e.ItemToReload);
+            }
+            foreach (var VARIABLE in e.ItemsToReload)
+            {
+                itemsToReload.Add(VARIABLE);
+            }
             reloadTimer.Start();
         }
 
@@ -294,7 +333,7 @@ namespace KOTEM.BariVSPackage
             var uiShell = GetService(typeof(IVsUIShell)) as IVsUIShell;
             Guid clsid = Guid.Empty;
             int result = VSConstants.S_FALSE;
-            
+
             if (uiShell != null)
             {
                 uiShell.ShowMessageBox(0,
@@ -327,18 +366,21 @@ namespace KOTEM.BariVSPackage
             }
             else
             {
-                if (!itemsToReload.All(i => projExtensions.Contains(Path.GetExtension(i))))
+                if (!commandRunning)
                 {
-                    if (Properties.Settings.Default.PromptReload)
+                    if (!itemsToReload.All(i => projExtensions.Contains(Path.GetExtension(i))))
                     {
-                        if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
+                        if (Properties.Settings.Default.PromptReload)
+                        {
+                            if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
+                                Reload();
+                        }
+                        else
                             Reload();
                     }
                     else
-                        Reload();
+                        itemsToReload.Clear();
                 }
-                else
-                    itemsToReload.Clear();
             }
             reloading = false;
         }
@@ -542,6 +584,7 @@ namespace KOTEM.BariVSPackage
         }
 
         private DTE dte;
+
         public DTE GetDte()
         {
             if (dte == null)
@@ -561,6 +604,18 @@ namespace KOTEM.BariVSPackage
                 GetDte().Events.SolutionEvents.Opened -= SolutionEvents_Opened;
                 GetDte().Events.SolutionEvents.BeforeClosing -= SolutionEvents_BeforeClosing;
                 GetDte().Events.DebuggerEvents.OnEnterDesignMode -= DebuggerEvents_OnEnterDesignMode;
+
+                if (target != null)
+                {
+                    target.CommandSent -= target_CommandSent;
+                }
+
+                if (commands != null)
+                {
+                    commands.CommandFinished -= commands_CommandFinished;
+                    commands.CommandStarted -= commands_CommandStarted;
+                    commands.Dispose();
+                }
 
                 UnRegisterPriorityCommandTarget();
 

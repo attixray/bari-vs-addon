@@ -8,9 +8,23 @@ namespace KOTEM.BariVSPackage.BariExtension
 {
     class CommandTarget : IOleCommandTarget
     {
+        public class CommandTargetEventArgs : EventArgs
+        {
+            public string Command { get; set; }
+
+            public CommandTargetEventArgs(string command)
+            {
+                Command = command;
+            }
+        }
+
+
         private readonly IOleCommandTarget baseImpl;
         private readonly Commands commands;
         private readonly IVsServiceProvider provider;
+
+        public event EventHandler<CommandTargetEventArgs> CommandSent; 
+
 
         public CommandTarget(IOleCommandTarget baseImpl, Commands commands, IVsServiceProvider provider)
         {
@@ -45,6 +59,11 @@ namespace KOTEM.BariVSPackage.BariExtension
                     {
                         if (vsStd97CmdID != VSConstants.VSStd97CmdID.SolutionCfg)
                         {
+                            if (CommandSent != null)
+                            {
+                                CommandSent(this, new CommandTargetEventArgs(vsStd97CmdID.ToString()));
+                            }
+
                             Debug.WriteLine("Not slncfg: " + vsStd97CmdID.ToString());
                         }
 

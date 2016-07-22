@@ -9,19 +9,41 @@ using Process = System.Diagnostics.Process;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
-    public class Commands
+    public class Commands : IDisposable
     {
         private readonly IVsServiceProvider owner;
         private BariShell bariShell;
         private bool isBuildNeeded;
         private Process debuggedProcess;
+        private BariOutputPane bariOutputPane;
+
+        public event EventHandler<BariShell.BariCommandArgs> CommandFinished;
+        public event EventHandler<BariShell.BariCommandArgs> CommandStarted;
+
+        public bool IsRunning
+        {
+            get { return bariShell.IsRunning; }
+        }
 
         public Commands(IVsServiceProvider owner)
         {
             this.owner = owner;
             isBuildNeeded = true;
+
+            var solutionInfo = new SolutionInfo(GetDte());
+            var workingDirectory = solutionInfo.BariWorkingDirectory;
+
+            var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;
+            bariOutputPane = new BariOutputPane(output);
+
+
+            var bariConfig = solutionInfo.BariConfig;
+            bariShell = new BariShell(bariConfig.BariPath, bariConfig.Goal, bariConfig.Target, workingDirectory, bariOutputPane);
+            bariShell.CommandFinished += bariShell_CommandFinished;
+            bariShell.CommandStarted += bariShell_CommandStarted;
         }
 
+        
         private DTE GetDte()
         {
             return owner.GetDte();
@@ -37,15 +59,15 @@ namespace KOTEM.BariVSPackage.BariExtension
 
             //object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
             //statusBar.Animation(5, ref icon);
-            
+
             //statusBar.SetText("Build started...");
         }
-        
+
         private void HideBuildStatus(bool cancelled)
         {
             //var dte = GetDte();
             //dte.StatusBar.Progress(false);
-            
+
             //NEW
             //var statusBar = owner.GetService<IVsStatusbar>();
 
@@ -78,21 +100,12 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void ExecuteBariActionAsync(string actionName, bool forceAction = false, Action<bool> after = null)
         {
-            var solutionInfo = new SolutionInfo(GetDte());
-
             CancelAnyPreviousBariAction();
 
-            var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;
-            var bariOutputPane = new BariOutputPane(output);
             bariOutputPane.Clear();
             GetDte().ExecuteCommand("View.Output");
             bariOutputPane.WriteLine(string.Format("Executing bari {0}...\n", actionName));
 
-            var workingDirectory = solutionInfo.BariWorkingDirectory;
-
-            var bariConfig = solutionInfo.BariConfig;
-
-            bariShell = new BariShell(bariConfig.BariPath, bariConfig.Goal, bariConfig.Target, workingDirectory, bariOutputPane);
             bariShell.ExecuteAsync(actionName, cancelled =>
             {
                 CancelAnyPreviousBariAction();
@@ -109,24 +122,14 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private int ExecuteBariAction(string actionName, bool forceAction = false, Func<bool, int> after = null)
         {
-            var solutionInfo = new SolutionInfo(GetDte());
-
             CancelAnyPreviousBariAction();
 
-            var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;
-            var bariOutputPane = new BariOutputPane(output);
             bariOutputPane.Clear();
             GetDte().ExecuteCommand("View.Output");
             bariOutputPane.WriteLine(string.Format("Executing bari {0}...\n", actionName));
 
-            var workingDirectory = solutionInfo.BariWorkingDirectory;
-
-            var bariConfig = solutionInfo.BariConfig;
-
-            bariShell = new BariShell(bariConfig.BariPath, bariConfig.Goal, bariConfig.Target, workingDirectory, bariOutputPane);
             return bariShell.Execute(actionName, forceAction, cancelled =>
             {
-                CancelAnyPreviousBariAction();
                 if (!cancelled)
                 {
                     isBuildNeeded = false;
@@ -139,12 +142,34 @@ namespace KOTEM.BariVSPackage.BariExtension
             });
         }
 
+        private void bariShell_CommandStarted(object sender, BariShell.BariCommandArgs e)
+        {
+            if (bariShell != null)
+            {
+                if (CommandStarted != null)
+                {
+                    CommandStarted(this, e);
+                }
+            }
+        }
+
+        private void bariShell_CommandFinished(object sender, BariShell.BariCommandArgs e)
+        {
+            if (bariShell != null)
+            {
+                if (CommandFinished != null)
+                {
+                    CommandFinished(this, e);
+                }
+                bariShell.CancelAll();
+            }
+        }
+
         public void CancelAnyPreviousBariAction()
         {
             if (bariShell != null)
             {
                 bariShell.CancelAll();
-                bariShell = null;
             }
         }
 
@@ -379,6 +404,22 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             get { return isBuildNeeded; }
             set { isBuildNeeded = value; }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing && bariShell != null)
+            {
+                bariShell.CancelAll();
+                bariShell.CommandFinished -= bariShell_CommandFinished;
+                bariShell.CommandStarted -= bariShell_CommandStarted;
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Timers;
@@ -10,11 +11,16 @@ namespace KOTEM.BariVSPackage.BariExtension
     {
         public class ReloadEventArgs : EventArgs
         {
-            public string ItemToReload { get; set; }
+            public IList<string> ItemsToReload { get; set; }
             public bool ReBuildNeeded { get; set; }
+            public ReloadEventArgs(IList<string> item)
+            {
+                ItemsToReload = item;
+            }
+
             public ReloadEventArgs(string item)
             {
-                ItemToReload = item;
+                ItemsToReload = new List<string> { item };
             }
         }
 
@@ -39,8 +45,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                               IncludeSubdirectories = true,
                               InternalBufferSize = 64 * 1024, // this is max
                               Filter = "*.*",
-                              NotifyFilter = NotifyFilters.LastAccess | NotifyFilters.LastWrite
-                                             | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+                              NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
                           };
 
             yamlWatcher = new FileSystemWatcher(Directory.GetParent(srcDir).FullName)
@@ -49,8 +54,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 IncludeSubdirectories = false,
                 InternalBufferSize = 64 * 1024, // this is max
                 Filter = "*.yaml",
-                NotifyFilter = NotifyFilters.LastAccess | NotifyFilters.LastWrite
-                               | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
             };
 
             watcher.Changed += FileSystemChanged;
@@ -69,26 +73,29 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
         {
-            if (Changed != null)
+            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
+
+            var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
+
+            if (extensions.Contains(ext) && Changed != null)
             {
-                var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
-
-                if (extensions.Contains(ext))
-                    Changed(this, new ReloadEventArgs(e.FullPath));
-
-                if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
-                {
-                    if (ReloadNeeded != null)
-                        ReloadNeeded(this, new ReloadEventArgs(e.FullPath) { ReBuildNeeded = ext.EndsWith("yaml") });
-                }
+                Changed(this, new ReloadEventArgs(e.FullPath));
+            }
+            if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
+            {
+                if (ReloadNeeded != null)
+                    ReloadNeeded(this, new ReloadEventArgs(e.FullPath) { ReBuildNeeded = ext.EndsWith("yaml") });
             }
         }
 
         private void FileSystemChangedDelRenameCreated(object sender, FileSystemEventArgs e)
         {
+            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
+
+
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
 
-            if (e.ChangeType == WatcherChangeTypes.Deleted)
+            if ((e.ChangeType == WatcherChangeTypes.Deleted || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
             {
                 deletedFiles.Add(e.FullPath);
                 deleteTimer.Stop();
@@ -96,13 +103,13 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return;
             }
 
-            if ((e.ChangeType == WatcherChangeTypes.Renamed || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
+            if ((e.ChangeType == WatcherChangeTypes.Renamed) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
             {
-                var fakeDeletes = deletedFiles.Where(d => Path.GetFileName(d).StartsWith(Path.GetFileName(e.FullPath))).ToList();
+                var fakeDeletes = deletedFiles.Where(d => Path.GetFileName(d).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
                 foreach (var fakeDelete in fakeDeletes)
                 {
                     deletedFiles.Remove(fakeDelete);
-                    FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
+                   // FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
                 }
             }
         }
@@ -110,10 +117,9 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             deleteTimer.Stop();
 
-            foreach (var deletedFile in deletedFiles.Where(f => extensions.Contains((Path.GetExtension(f) ?? string.Empty).ToLower())))
+            if (ReloadNeeded != null && deletedFiles.Any())
             {
-                if (ReloadNeeded != null)
-                    ReloadNeeded(this, new ReloadEventArgs(deletedFile) { ReBuildNeeded = true });
+                ReloadNeeded(this, new ReloadEventArgs(deletedFiles.Where(f => extensions.Contains((Path.GetExtension(f) ?? string.Empty).ToLower())).ToList()) { ReBuildNeeded = !deletedFiles.Any(f => projExtensions.Contains(f)) });
             }
 
             deletedFiles.Clear();
