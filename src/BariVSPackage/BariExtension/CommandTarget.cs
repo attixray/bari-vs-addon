@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
 
@@ -94,6 +95,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                                 {
                                     var dte = provider.GetDte();
                                     dte.Documents.SaveAll();
+                                    Thread.Sleep(100);
                                     commands.BuildIfNeeded((g) =>
                                     {
                                         normalStart = 2;

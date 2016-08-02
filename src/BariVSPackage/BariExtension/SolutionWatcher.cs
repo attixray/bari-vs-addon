@@ -9,6 +9,8 @@ namespace KOTEM.BariVSPackage.BariExtension
 {
     internal class SolutionWatcher : IDisposable
     {
+        private readonly IEnumerable<string> openedProjects;
+
         public class ReloadEventArgs : EventArgs
         {
             public IList<string> ItemsToReload { get; set; }
@@ -28,14 +30,15 @@ namespace KOTEM.BariVSPackage.BariExtension
         private FileSystemWatcher yamlWatcher;
         private readonly HashSet<string> extensions;
         private readonly HashSet<string> projExtensions;
-        private Timer deleteTimer;
-        private readonly IList<string> deletedFiles = new List<string>();
+        private Timer delAddTimer;
+        private readonly IList<string> delAddFiles = new List<string>();
 
         public event EventHandler<ReloadEventArgs> Changed;
         public event EventHandler<ReloadEventArgs> ReloadNeeded;
 
-        public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension)
+        public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension, IEnumerable<string> openedProjects)
         {
+            this.openedProjects = openedProjects.Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower());
             extensions = new HashSet<string>(extension);
             projExtensions = new HashSet<string>(projectExtension);
 
@@ -45,7 +48,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                               IncludeSubdirectories = true,
                               InternalBufferSize = 64 * 1024, // this is max
                               Filter = "*.*",
-                              NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+                              NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
                           };
 
             yamlWatcher = new FileSystemWatcher(Directory.GetParent(srcDir).FullName)
@@ -54,7 +57,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 IncludeSubdirectories = false,
                 InternalBufferSize = 64 * 1024, // this is max
                 Filter = "*.yaml",
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
             };
 
             watcher.Changed += FileSystemChanged;
@@ -67,62 +70,95 @@ namespace KOTEM.BariVSPackage.BariExtension
             yamlWatcher.Created += FileSystemChangedDelRenameCreated;
             yamlWatcher.Renamed += FileSystemChangedDelRenameCreated;
 
-            deleteTimer = new Timer(351);
-            deleteTimer.Elapsed += deleteTimerOnElapsed;
+            delAddTimer = new Timer(431);
+            delAddTimer.Elapsed += deleteTimerOnElapsed;
         }
 
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
         {
-            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
-
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
+            if (CheckProjects(e.FullPath.ToLower(), ext))
+            {
+                return;
+            }
+
+            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
 
             if (extensions.Contains(ext) && Changed != null)
             {
                 Changed(this, new ReloadEventArgs(e.FullPath));
+                CheckFakeDelete(sender, e, ext);
             }
             if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
             {
                 if (ReloadNeeded != null)
+                {
                     ReloadNeeded(this, new ReloadEventArgs(e.FullPath) { ReBuildNeeded = ext.EndsWith("yaml") });
+                }
             }
         }
 
         private void FileSystemChangedDelRenameCreated(object sender, FileSystemEventArgs e)
         {
-            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
-
-
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
-
-            if ((e.ChangeType == WatcherChangeTypes.Deleted || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
+            if (CheckProjects(e.FullPath.ToLower(), ext))
             {
-                deletedFiles.Add(e.FullPath);
-                deleteTimer.Stop();
-                deleteTimer.Start();
                 return;
             }
 
-            if ((e.ChangeType == WatcherChangeTypes.Renamed) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
+            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
+
+            if ((e.ChangeType == WatcherChangeTypes.Deleted || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
             {
-                var fakeDeletes = deletedFiles.Where(d => Path.GetFileName(d).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
+                delAddFiles.Add(e.FullPath);
+                delAddTimer.Stop();
+                delAddTimer.Start();
+                return;
+            }
+
+            CheckFakeDelete(sender, e, ext);
+        }
+
+        private bool CheckProjects(string e, string ext)
+        {
+            if (string.IsNullOrEmpty(ext))
+            {
+                return true;
+            }
+
+            if (!openedProjects.AsParallel().Any(p => e.StartsWith(p)) && !ext.EndsWith("yaml"))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private void CheckFakeDelete(object sender, FileSystemEventArgs e, string ext)
+        {
+            if ((e.ChangeType == WatcherChangeTypes.Renamed || e.ChangeType == WatcherChangeTypes.Changed) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
+            {
+                var fakeDeletes = delAddFiles.Where(d => Path.GetFileName(d).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
                 foreach (var fakeDelete in fakeDeletes)
                 {
-                    deletedFiles.Remove(fakeDelete);
-                   // FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
+                    delAddFiles.Remove(fakeDelete);
+                    if (e.ChangeType != WatcherChangeTypes.Changed)
+                    {
+                        FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
+                    }
                 }
             }
         }
+
         private void deleteTimerOnElapsed(object sender, ElapsedEventArgs e)
         {
-            deleteTimer.Stop();
+            delAddTimer.Stop();
 
-            if (ReloadNeeded != null && deletedFiles.Any())
+            if (ReloadNeeded != null && delAddFiles.Any())
             {
-                ReloadNeeded(this, new ReloadEventArgs(deletedFiles.Where(f => extensions.Contains((Path.GetExtension(f) ?? string.Empty).ToLower())).ToList()) { ReBuildNeeded = !deletedFiles.Any(f => projExtensions.Contains(f)) });
+                ReloadNeeded(this, new ReloadEventArgs(delAddFiles.Where(f => extensions.Contains((Path.GetExtension(f) ?? string.Empty).ToLower())).ToList()) { ReBuildNeeded = !delAddFiles.Any(f => projExtensions.Contains(f)) });
             }
 
-            deletedFiles.Clear();
+            delAddFiles.Clear();
         }
 
         protected virtual void Dispose(bool disposing)
@@ -149,12 +185,12 @@ namespace KOTEM.BariVSPackage.BariExtension
                     yamlWatcher = null;
                 }
 
-                if (deleteTimer != null)
+                if (delAddTimer != null)
                 {
-                    deleteTimer.Stop();
-                    deleteTimer.Elapsed -= deleteTimerOnElapsed;
-                    deleteTimer.Dispose();
-                    deleteTimer = null;
+                    delAddTimer.Stop();
+                    delAddTimer.Elapsed -= deleteTimerOnElapsed;
+                    delAddTimer.Dispose();
+                    delAddTimer = null;
                 }
             }
         }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.CodeDom;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -52,6 +53,7 @@ namespace KOTEM.BariVSPackage
         private ReloadDialogKiller dialogKiller;
         private Timer reloadTimer;
         private readonly HashSet<string> itemsToReload = new HashSet<string>();
+        private readonly HashSet<string> itemsToAddDelete = new HashSet<string>();
         private readonly Dictionary<string, bool> documents = new Dictionary<string, bool>();
 
         private bool reloadNeededAfterDebug;
@@ -87,7 +89,7 @@ namespace KOTEM.BariVSPackage
 
             target = new CommandTarget(this, commands, this);
             target.CommandSent += target_CommandSent;
-            
+
 
             RegisterDialogKiller();
 
@@ -286,9 +288,65 @@ namespace KOTEM.BariVSPackage
 
             if (!Directory.Exists(srcDir)) return;
 
-            solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions);
+            var projects = new List<string>();
+
+            projects.AddRange(Projects().Select(p => p.FullName));
+
+            solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions, projects);
             solutionWatcher.Changed += SolutionWatcherOnChanged;
             solutionWatcher.ReloadNeeded += SolutionWatcherOnReloadNeeded;
+        }
+
+
+
+        public IList<Project> Projects()
+        {
+            Projects projects = GetDte().Solution.Projects;
+            List<Project> list = new List<Project>();
+            var item = projects.GetEnumerator();
+            while (item.MoveNext())
+            {
+                var project = item.Current as Project;
+                if (project == null)
+                {
+                    continue;
+                }
+
+                if (project.Kind == ProjectKinds.vsProjectKindSolutionFolder)
+                {
+                    list.AddRange(GetSolutionFolderProjects(project));
+                }
+                else
+                {
+                    list.Add(project);
+                }
+            }
+
+            return list;
+        }
+
+        private IEnumerable<Project> GetSolutionFolderProjects(Project solutionFolder)
+        {
+            List<Project> list = new List<Project>();
+            for (var i = 1; i <= solutionFolder.ProjectItems.Count; i++)
+            {
+                var subProject = solutionFolder.ProjectItems.Item(i).SubProject;
+                if (subProject == null)
+                {
+                    continue;
+                }
+
+                // If this is another solution folder, do a recursive call, otherwise add
+                if (subProject.Kind == ProjectKinds.vsProjectKindSolutionFolder)
+                {
+                    list.AddRange(GetSolutionFolderProjects(subProject));
+                }
+                else
+                {
+                    list.Add(subProject);
+                }
+            }
+            return list;
         }
 
         private void SolutionWatcherOnChanged(object sender, SolutionWatcher.ReloadEventArgs e)
@@ -303,7 +361,7 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionWatcherOnReloadNeeded(object sender, SolutionWatcher.ReloadEventArgs e)
         {
-            if (reloading || (!commandRunning && e.ItemsToReload.All(f => projExtensions.Contains(Path.GetExtension(f).ToLower()))))
+            if (reloading)
             {
                 return;
             }
@@ -318,7 +376,7 @@ namespace KOTEM.BariVSPackage
             }
             foreach (var VARIABLE in e.ItemsToReload)
             {
-                itemsToReload.Add(VARIABLE);
+                itemsToAddDelete.Add(VARIABLE);
             }
             reloadTimer.Start();
         }
@@ -368,7 +426,7 @@ namespace KOTEM.BariVSPackage
             {
                 if (!commandRunning)
                 {
-                    if (!itemsToReload.All(i => projExtensions.Contains(Path.GetExtension(i))))
+                    if (!itemsToAddDelete.All(i => projExtensions.Contains(Path.GetExtension(i))))
                     {
                         if (Properties.Settings.Default.PromptReload)
                         {
@@ -377,9 +435,10 @@ namespace KOTEM.BariVSPackage
                         }
                         else
                             Reload();
+
                     }
-                    else
-                        itemsToReload.Clear();
+                    itemsToReload.Clear();
+                    itemsToAddDelete.Clear();
                 }
             }
             reloading = false;
@@ -437,6 +496,7 @@ namespace KOTEM.BariVSPackage
 
                 reloadNeededAfterDebug = false;
                 itemsToReload.Clear();
+                itemsToAddDelete.Clear();
             }
         }
 
