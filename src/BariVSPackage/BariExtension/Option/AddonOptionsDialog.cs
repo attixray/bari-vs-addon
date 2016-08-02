@@ -44,6 +44,14 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
             set { Properties.Settings.Default.Verbose = value; }
         }
 
+        [Category("Misc")]
+        [Description("Soft-Clean option")]
+        public bool SoftClean
+        {
+            get { return Properties.Settings.Default.SoftClean; }
+            set { Properties.Settings.Default.SoftClean = value; }
+        }
+
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();

@@ -52,8 +52,15 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
             try
             {
-                var arguments = string.Format("{0} --target {1} {2} {3}", Settings.Default.Verbose ? " -v " : string.Empty, goal, actionName, productName);
+                var arguments = string.Format("{0} --target {1} {2} {3} {4}", 
+                            Settings.Default.Verbose ? " -v " : string.Empty, 
+                            goal, 
+                            actionName, 
+                            productName,
+                            Settings.Default.SoftClean && (actionName.StartsWith("rebuild") || actionName.StartsWith("clean")) ? " --soft-clean " : string.Empty);
+
                 ShowOutput(string.Format("{0} {1}", bariPath, arguments));
+                
                 var processStartInfo = new ProcessStartInfo(
                     bariPath,
                     arguments)

@@ -82,5 +82,17 @@ namespace KOTEM.BariVSPackage.Properties {
                 this["Verbose"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool SoftClean {
+            get {
+                return ((bool)(this["SoftClean"]));
+            }
+            set {
+                this["SoftClean"] = value;
+            }
+        }
     }
 }
