@@ -82,20 +82,23 @@ namespace KOTEM.BariVSPackage
         {
             Debug.WriteLine("Entering Initialize() of: {0}", this);
             base.Initialize();
+            var solutionInfo = new SolutionInfo(GetDte());
 
-            commands = new Commands(this);
-            commands.CommandFinished += commands_CommandFinished;
-            commands.CommandStarted += commands_CommandStarted;
+            if (solutionInfo.IsBariSolution)
+            {
+                commands = new Commands(this);
+                commands.CommandFinished += commands_CommandFinished;
+                commands.CommandStarted += commands_CommandStarted;
 
-            target = new CommandTarget(this, commands, this);
-            target.CommandSent += target_CommandSent;
+                target = new CommandTarget(this, commands, this);
+                target.CommandSent += target_CommandSent;
 
+                RegisterDialogKiller();
 
-            RegisterDialogKiller();
-
-            GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
-            GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
-            GetDte().Events.DebuggerEvents.OnEnterDesignMode += DebuggerEvents_OnEnterDesignMode;
+                GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
+                GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
+                GetDte().Events.DebuggerEvents.OnEnterDesignMode += DebuggerEvents_OnEnterDesignMode;
+            }
         }
 
         private void target_CommandSent(object sender, CommandTarget.CommandTargetEventArgs e)

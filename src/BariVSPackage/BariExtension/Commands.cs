@@ -37,10 +37,13 @@ namespace KOTEM.BariVSPackage.BariExtension
             bariOutputPane = new BariOutputPane(output);
 
 
-            var bariConfig = solutionInfo.BariConfig;
-            bariShell = new BariShell(bariConfig.BariPath, bariConfig.Goal, bariConfig.Target, workingDirectory, bariOutputPane);
-            bariShell.CommandFinished += bariShell_CommandFinished;
-            bariShell.CommandStarted += bariShell_CommandStarted;
+            if (solutionInfo.IsBariSolution)
+            {
+                var bariConfig = solutionInfo.BariConfig;
+                bariShell = new BariShell(bariConfig.BariPath, bariConfig.Goal, bariConfig.Target, workingDirectory, bariOutputPane);
+                bariShell.CommandFinished += bariShell_CommandFinished;
+                bariShell.CommandStarted += bariShell_CommandStarted;
+            }
         }
 
         
