@@ -38,7 +38,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension, IEnumerable<string> openedProjects)
         {
-            this.openedProjects = openedProjects.Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower());
+            this.openedProjects = openedProjects.Where(p => projectExtension.Any(p.EndsWith)).Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower()).ToList();
             extensions = new HashSet<string>(extension);
             projExtensions = new HashSet<string>(projectExtension);
 
@@ -70,7 +70,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             yamlWatcher.Created += FileSystemChangedDelRenameCreated;
             yamlWatcher.Renamed += FileSystemChangedDelRenameCreated;
 
-            delAddTimer = new Timer(431);
+            delAddTimer = new Timer(501);
             delAddTimer.Elapsed += deleteTimerOnElapsed;
         }
 
