@@ -55,6 +55,7 @@ namespace KOTEM.BariVSPackage
         private readonly HashSet<string> itemsToReload = new HashSet<string>();
         private readonly HashSet<string> itemsToAddDelete = new HashSet<string>();
         private readonly Dictionary<string, bool> documents = new Dictionary<string, bool>();
+        private SolutionInfo ssolutionInfo;
 
         private bool reloadNeededAfterDebug;
         private bool reBuildNeeded;
@@ -74,6 +75,22 @@ namespace KOTEM.BariVSPackage
         internal const int IDNO = 7;
         internal const int IDCLOSE = 8;
 
+        public SolutionInfo SolutionInfo
+        {
+            get
+            {
+                if (ssolutionInfo == null)
+                {
+                    ssolutionInfo = new SolutionInfo(GetDte());
+                }
+                return ssolutionInfo;
+            }
+            set
+            {
+                ssolutionInfo = value;
+            }
+        }
+
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that rely on services provided by VisualStudio.
@@ -82,9 +99,9 @@ namespace KOTEM.BariVSPackage
         {
             Debug.WriteLine("Entering Initialize() of: {0}", this);
             base.Initialize();
-            var solutionInfo = new SolutionInfo(GetDte());
+            SolutionInfo = new SolutionInfo(GetDte());
 
-            if (solutionInfo.IsBariSolution)
+            if (SolutionInfo.IsBariSolution)
             {
                 commands = new Commands(this);
                 commands.CommandFinished += commands_CommandFinished;
@@ -94,7 +111,6 @@ namespace KOTEM.BariVSPackage
                 target.CommandSent += target_CommandSent;
 
                 RegisterDialogKiller();
-
                 GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
                 GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
                 GetDte().Events.DebuggerEvents.OnEnterDesignMode += DebuggerEvents_OnEnterDesignMode;
@@ -129,10 +145,10 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionEvents_BeforeClosing()
         {
-            var solutionInfo = new SolutionInfo(GetDte());
+            SolutionInfo = new SolutionInfo(GetDte());
 
-            var solutionDir = solutionInfo.TargetWorkingDirectory;
-            if (solutionInfo.IsBariSolution && solutionDir != null)
+            var solutionDir = SolutionInfo.TargetWorkingDirectory;
+            if (SolutionInfo.IsBariSolution && solutionDir != null)
             {
                 UnRegisterPriorityCommandTarget();
                 UnRegisterKeyboardHook();
@@ -144,10 +160,10 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionEvents_Opened()
         {
-            var solutionInfo = new SolutionInfo(GetDte());
+            SolutionInfo = new SolutionInfo(GetDte());
 
-            var solutionDir = solutionInfo.TargetWorkingDirectory;
-            if (solutionInfo.IsBariSolution && solutionDir != null)
+            var solutionDir = SolutionInfo.TargetWorkingDirectory;
+            if (SolutionInfo.IsBariSolution && solutionDir != null)
             {
                 try
                 {
@@ -156,7 +172,7 @@ namespace KOTEM.BariVSPackage
                     RegisterFileSystemWatcher();
                     // RegisterDialogKiller();
                     RegisterReloadTimer();
-                    SetStartUpProject(solutionInfo);
+                    SetStartUpProject(SolutionInfo);
                 }
                 catch (Exception)
                 {
@@ -217,8 +233,7 @@ namespace KOTEM.BariVSPackage
         {
             if (keyCode == Keys.Cancel)
             {
-                var solutionInfo = new SolutionInfo(GetDte());
-                if (solutionInfo.IsBariSolution)
+                if (SolutionInfo.IsBariSolution)
                     commands.CancelAnyPreviousBariAction();
             }
         }
@@ -282,9 +297,7 @@ namespace KOTEM.BariVSPackage
 
         private void RegisterFileSystemWatcher()
         {
-            var solutionInfo = new SolutionInfo(GetDte());
-
-            var bariDir = solutionInfo.BariWorkingDirectory;
+            var bariDir = SolutionInfo.BariWorkingDirectory;
             if (bariDir == null) return;
 
             var srcDir = Path.Combine(bariDir, "src");
@@ -292,7 +305,6 @@ namespace KOTEM.BariVSPackage
             if (!Directory.Exists(srcDir)) return;
 
             var projects = new List<string>();
-
             projects.AddRange(Projects().Select(p => p.FullName));
 
             solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions, projects);
@@ -300,13 +312,55 @@ namespace KOTEM.BariVSPackage
             solutionWatcher.ReloadNeeded += SolutionWatcherOnReloadNeeded;
         }
 
-
-
-        public IList<Project> Projects()
+        private bool IsFileInProject(string fileName)
         {
-            Projects projects = GetDte().Solution.Projects;
-            List<Project> list = new List<Project>();
+            var project = GetProject(SolutionInfo, GetProjectName(SolutionInfo, fileName));
+
+            var res = false;
+
+            var file = Path.GetFileName(fileName);
+
+            var items = project.ProjectItems.GetEnumerator();
+            while (items.MoveNext())
+            {
+                var item = (ProjectItem)items.Current;
+                if (GetFiles(item).Any(p => p.Equals(file)))
+                {
+                    res = true;
+                }
+            }
+
+
+            Debug.WriteLine("IsFileInProject: {0} - {1} - {2}", project.Name, fileName, res);
+
+            return res;
+        }
+
+        IEnumerable<string> GetFiles(ProjectItem item)
+        {
+            //base case
+            if (item.ProjectItems == null)
+                return new List<string> { item.Name };
+
+      //      Debug.WriteLine("{0} - {1}", item.Name, item.ProjectItems == null ? -1 : item.ProjectItems.Count);
+
+            var items = item.ProjectItems.GetEnumerator();
+            var ret = new List<string> { item.Name };
+            while (items.MoveNext())
+            {
+                var currentItem = (ProjectItem)items.Current;
+                ret.AddRange(GetFiles(currentItem));
+            }
+
+            return ret;
+        }
+
+        private IList<Project> Projects()
+        {
+            var projects = GetDte().Solution.Projects;
+            var list = new List<Project>();
             var item = projects.GetEnumerator();
+
             while (item.MoveNext())
             {
                 var project = item.Current as Project;
@@ -354,11 +408,11 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionWatcherOnChanged(object sender, SolutionWatcher.ReloadEventArgs e)
         {
-            Debug.WriteLine("SolutionWatcherOnChanged");
+           // Debug.WriteLine("SolutionWatcherOnChanged");
             commands.IsBuildNeeded = true;
-            foreach (var VARIABLE in e.ItemsToReload)
+            foreach (var item in e.ItemsToReload)
             {
-                itemsToReload.Add(VARIABLE);
+                itemsToReload.Add(item.Key);
             }
         }
 
@@ -369,19 +423,27 @@ namespace KOTEM.BariVSPackage
                 return;
             }
 
-            Debug.WriteLine("SolutionWatcherOnReloadNeeded");
+         //   Debug.WriteLine("SolutionWatcherOnReloadNeeded");
 
-            reloadTimer.Stop();
-            if (e.ReBuildNeeded)
+            if (!IsVSChange(e.ItemsToReload))
             {
-                commands.IsBuildNeeded = true;
-                reBuildNeeded = true;
+                reloadTimer.Stop();
+                if (e.ReBuildNeeded)
+                {
+                    commands.IsBuildNeeded = true;
+                    reBuildNeeded = true;
+                }
+                foreach (var item in e.ItemsToReload)
+                {
+                    itemsToAddDelete.Add(item.Key);
+                }
+                reloadTimer.Start();
             }
-            foreach (var VARIABLE in e.ItemsToReload)
-            {
-                itemsToAddDelete.Add(VARIABLE);
-            }
-            reloadTimer.Start();
+        }
+
+        private bool IsVSChange(IDictionary<string, WatcherChangeTypes> dictionary)
+        {
+            return dictionary.All(p => p.Value == WatcherChangeTypes.Created && IsFileInProject(p.Key) || p.Value == WatcherChangeTypes.Deleted && !IsFileInProject(p.Key));
         }
 
         private void ReloadTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)

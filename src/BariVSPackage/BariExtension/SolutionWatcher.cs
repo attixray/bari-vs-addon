@@ -13,16 +13,16 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         public class ReloadEventArgs : EventArgs
         {
-            public IList<string> ItemsToReload { get; set; }
+            public IDictionary<string, WatcherChangeTypes> ItemsToReload { get; set; }
             public bool ReBuildNeeded { get; set; }
-            public ReloadEventArgs(IList<string> item)
+            public ReloadEventArgs(IDictionary<string, WatcherChangeTypes> items)
             {
-                ItemsToReload = item;
+                ItemsToReload = items;
             }
 
-            public ReloadEventArgs(string item)
+            public ReloadEventArgs(string item, WatcherChangeTypes type)
             {
-                ItemsToReload = new List<string> { item };
+                ItemsToReload = new Dictionary<string, WatcherChangeTypes> { { item, type } };
             }
         }
 
@@ -31,7 +31,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         private readonly HashSet<string> extensions;
         private readonly HashSet<string> projExtensions;
         private Timer delAddTimer;
-        private readonly IList<string> delAddFiles = new List<string>();
+        private readonly IDictionary<string, WatcherChangeTypes> delAddFiles = new Dictionary<string, WatcherChangeTypes>();
 
         public event EventHandler<ReloadEventArgs> Changed;
         public event EventHandler<ReloadEventArgs> ReloadNeeded;
@@ -82,18 +82,18 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return;
             }
 
-            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
+         //   Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
 
             if (extensions.Contains(ext) && Changed != null)
             {
-                Changed(this, new ReloadEventArgs(e.FullPath));
+                Changed(this, new ReloadEventArgs(e.FullPath, WatcherChangeTypes.Changed));
                 CheckFakeDelete(sender, e, ext);
             }
             if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
             {
                 if (ReloadNeeded != null)
                 {
-                    ReloadNeeded(this, new ReloadEventArgs(e.FullPath) { ReBuildNeeded = ext.EndsWith("yaml") });
+                    ReloadNeeded(this, new ReloadEventArgs(e.FullPath, WatcherChangeTypes.Changed) { ReBuildNeeded = ext.EndsWith("yaml") });
                 }
             }
         }
@@ -106,11 +106,14 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return;
             }
 
-            Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
+      //      Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
 
             if ((e.ChangeType == WatcherChangeTypes.Deleted || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
             {
-                delAddFiles.Add(e.FullPath);
+                if (!delAddFiles.ContainsKey(e.FullPath))
+                {
+                    delAddFiles.Add(e.FullPath, e.ChangeType);
+                }
                 delAddTimer.Stop();
                 delAddTimer.Start();
                 return;
@@ -135,16 +138,19 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void CheckFakeDelete(object sender, FileSystemEventArgs e, string ext)
         {
-            if ((e.ChangeType == WatcherChangeTypes.Renamed || e.ChangeType == WatcherChangeTypes.Changed) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
+            if (extensions.Contains(ext) || projExtensions.Contains(ext))
             {
-                var fakeDeletes = delAddFiles.Where(d => Path.GetFileName(d).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
-                foreach (var fakeDelete in fakeDeletes)
+                if (e.ChangeType == WatcherChangeTypes.Renamed)
                 {
-                    delAddFiles.Remove(fakeDelete);
-                    if (e.ChangeType != WatcherChangeTypes.Changed)
+                    var fakeDeletes = delAddFiles.Where(d => Path.GetFileName(d.Key).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
+                    foreach (var fakeDelete in fakeDeletes)
                     {
-                        FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
+                        delAddFiles.Remove(fakeDelete);
                     }
+                }
+                else if (e.ChangeType != WatcherChangeTypes.Changed)
+                {
+                    FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
                 }
             }
         }
@@ -155,7 +161,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 
             if (ReloadNeeded != null && delAddFiles.Any())
             {
-                ReloadNeeded(this, new ReloadEventArgs(delAddFiles.Where(f => extensions.Contains((Path.GetExtension(f) ?? string.Empty).ToLower())).ToList()) { ReBuildNeeded = !delAddFiles.Any(f => projExtensions.Contains(f)) });
+                ReloadNeeded(this, new ReloadEventArgs(delAddFiles.Where(f => extensions.Contains((Path.GetExtension(f.Key) ?? string.Empty).ToLower())).ToDictionary(k => k.Key, k => k.Value)) { ReBuildNeeded = !delAddFiles.Any(f => projExtensions.Contains(f.Key)) });
             }
 
             delAddFiles.Clear();
