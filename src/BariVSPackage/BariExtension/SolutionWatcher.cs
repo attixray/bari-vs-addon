@@ -9,6 +9,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 {
     internal class SolutionWatcher : IDisposable
     {
+        private readonly Predicate<string> isFileOpenedInSln;
         private readonly IEnumerable<string> openedProjects;
 
         public class ReloadEventArgs : EventArgs
@@ -36,8 +37,9 @@ namespace KOTEM.BariVSPackage.BariExtension
         public event EventHandler<ReloadEventArgs> Changed;
         public event EventHandler<ReloadEventArgs> ReloadNeeded;
 
-        public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension, IEnumerable<string> openedProjects)
+        public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension, IEnumerable<string> openedProjects, Predicate<string> isFileOpenedInSln)
         {
+            this.isFileOpenedInSln = isFileOpenedInSln;
             this.openedProjects = openedProjects.Where(p => projectExtension.Any(p.EndsWith)).Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower()).ToList();
             extensions = new HashSet<string>(extension);
             projExtensions = new HashSet<string>(projectExtension);
@@ -146,6 +148,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     foreach (var fakeDelete in fakeDeletes)
                     {
                         delAddFiles.Remove(fakeDelete);
+                        FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
                     }
                 }
                 else if (e.ChangeType != WatcherChangeTypes.Changed)
@@ -159,7 +162,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             delAddTimer.Stop();
 
-            if (ReloadNeeded != null && delAddFiles.Any())
+            if (ReloadNeeded != null && delAddFiles.Any() && !delAddFiles.All(p => p.Value == WatcherChangeTypes.Created && isFileOpenedInSln(p.Key) || p.Value == WatcherChangeTypes.Deleted && !isFileOpenedInSln(p.Key)))
             {
                 ReloadNeeded(this, new ReloadEventArgs(delAddFiles.Where(f => extensions.Contains((Path.GetExtension(f.Key) ?? string.Empty).ToLower())).ToDictionary(k => k.Key, k => k.Value)) { ReBuildNeeded = !delAddFiles.Any(f => projExtensions.Contains(f.Key)) });
             }

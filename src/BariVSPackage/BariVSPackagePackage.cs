@@ -307,7 +307,7 @@ namespace KOTEM.BariVSPackage
             var projects = new List<string>();
             projects.AddRange(Projects().Select(p => p.FullName));
 
-            solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions, projects);
+            solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions, projects, IsFileInProject);
             solutionWatcher.Changed += SolutionWatcherOnChanged;
             solutionWatcher.ReloadNeeded += SolutionWatcherOnReloadNeeded;
         }
@@ -342,7 +342,7 @@ namespace KOTEM.BariVSPackage
             if (item.ProjectItems == null)
                 return new List<string> { item.Name };
 
-      //      Debug.WriteLine("{0} - {1}", item.Name, item.ProjectItems == null ? -1 : item.ProjectItems.Count);
+            //      Debug.WriteLine("{0} - {1}", item.Name, item.ProjectItems == null ? -1 : item.ProjectItems.Count);
 
             var items = item.ProjectItems.GetEnumerator();
             var ret = new List<string> { item.Name };
@@ -408,7 +408,6 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionWatcherOnChanged(object sender, SolutionWatcher.ReloadEventArgs e)
         {
-           // Debug.WriteLine("SolutionWatcherOnChanged");
             commands.IsBuildNeeded = true;
             foreach (var item in e.ItemsToReload)
             {
@@ -423,22 +422,17 @@ namespace KOTEM.BariVSPackage
                 return;
             }
 
-         //   Debug.WriteLine("SolutionWatcherOnReloadNeeded");
-
-            if (!IsVSChange(e.ItemsToReload))
+            reloadTimer.Stop();
+            if (e.ReBuildNeeded)
             {
-                reloadTimer.Stop();
-                if (e.ReBuildNeeded)
-                {
-                    commands.IsBuildNeeded = true;
-                    reBuildNeeded = true;
-                }
-                foreach (var item in e.ItemsToReload)
-                {
-                    itemsToAddDelete.Add(item.Key);
-                }
-                reloadTimer.Start();
+                commands.IsBuildNeeded = true;
+                reBuildNeeded = true;
             }
+            foreach (var item in e.ItemsToReload)
+            {
+                itemsToAddDelete.Add(item.Key);
+            }
+            reloadTimer.Start();
         }
 
         private bool IsVSChange(IDictionary<string, WatcherChangeTypes> dictionary)
