@@ -30,7 +30,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             this.owner = owner;
             isBuildNeeded = true;
 
-            var solutionInfo = new SolutionInfo(GetDte());
+            var solutionInfo = new SolutionInfo(GetDte().Solution.FileName);
             var workingDirectory = solutionInfo.BariWorkingDirectory;
 
             var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;
@@ -318,13 +318,13 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private int StartProcess()
         {
-            var solutionInfo = new SolutionInfo(GetDte());
+            var solutionInfo = new SolutionInfo(GetDte().Solution.FileName);
 
             var solutionDir = solutionInfo.TargetWorkingDirectory;
             if (solutionDir != null)
             {
-                var startupProjectName = ((Array)solutionInfo.Solution.SolutionBuild.StartupProjects).Cast<string>().First();
-                var startupProject = GetProject(solutionInfo, startupProjectName);
+                var startupProjectName = ((Array)GetDte().Solution.SolutionBuild.StartupProjects).Cast<string>().First();
+                var startupProject = owner.GetProject(startupProjectName);
 
                 if (startupProject == null)
                     return -1;
@@ -361,32 +361,6 @@ namespace KOTEM.BariVSPackage.BariExtension
                 }
             }
             return -1;
-        }
-
-        private Project GetProject(SolutionInfo solutionInfo, string name)
-        {
-            foreach (Project solFolder in solutionInfo.Solution.Projects)
-            {
-                if (solFolder != null)
-                {
-                    if (solFolder.UniqueName == name)
-                        return solFolder;
-                }
-
-                foreach (var projectItem in solFolder.ProjectItems)
-                {
-                    ProjectItem tmpItem = projectItem as ProjectItem;
-                    if (tmpItem != null)
-                    {
-                        Project proj = tmpItem.Object as Project;
-                        if (proj != null && proj.UniqueName == name)
-                            return proj;
-                    }
-
-
-                }
-            }
-            return null;
         }
 
         private static string GetExeName(StartParameters startParameters, Project startupProject)

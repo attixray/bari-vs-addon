@@ -6,5 +6,6 @@ namespace KOTEM.BariVSPackage.BariExtension
     {
         DTE GetDte();
         T GetService<T>();
+        Project GetProject(string name);
     }
 }

@@ -6,27 +6,26 @@ namespace KOTEM.BariVSPackage.BariExtension
 {
     public class SolutionInfo
     {
-        private DTE dte;
-        public SolutionInfo(DTE dte)
+        private BariSolutionConfig bariConfig;
+
+        public SolutionInfo(string solutionFileName)
         {
-            if (dte != null)
-            {
-                this.dte = dte;
-                Solution = dte.Solution;
-            }
+            Solution = solutionFileName;
         }
 
-        [CanBeNull]
-        public Solution Solution { get; private set; }
+        public string Solution { get; private set; }
 
         [CanBeNull]
         public string TargetWorkingDirectory
         {
             get
             {
-                if (Solution == null) return null;
+                if (string.IsNullOrEmpty(Solution))
+                {
+                    return null;
+                }
 
-                var solutionDir = Path.GetDirectoryName(Solution.FileName);
+                var solutionDir = Path.GetDirectoryName(Solution);
                 if (solutionDir == null) return null;
 
                 return Path.Combine(solutionDir, TargetName);
@@ -38,9 +37,12 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             get
             {
-                if (Solution == null) return null;
+                if (string.IsNullOrEmpty(Solution))
+                {
+                    return null;
+                }
 
-                var solutionDir = Path.GetDirectoryName(Solution.FileName);
+                var solutionDir = Path.GetDirectoryName(Solution);
                 if (solutionDir == null) return null;
 
                 var parentDir = Directory.GetParent(solutionDir).FullName;
@@ -68,21 +70,18 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             get
             {
-                if (Solution == null) return null;
+                if (string.IsNullOrEmpty(Solution))
+                {
+                    return null;
+                }
 
-                var yamlFileName = Path.ChangeExtension(Solution.FileName, "yaml");
-                return BariSolutionConfig.FromFile(yamlFileName);
-            }
-        }
+                if (bariConfig != null)
+                {
+                    return bariConfig;
+                }
 
-        public bool IsDebugging
-        {
-            get
-            {
-                if (dte == null) return false;
-                if (dte.Debugger == null) return false;
-
-                return dte.Debugger.DebuggedProcesses.Count > 0;
+                var yamlFileName = Path.ChangeExtension(Solution, "yaml");
+                return  bariConfig = BariSolutionConfig.FromFile(yamlFileName);
             }
         }
     }

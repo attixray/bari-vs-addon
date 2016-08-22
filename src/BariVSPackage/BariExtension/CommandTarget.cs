@@ -24,7 +24,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         private readonly Commands commands;
         private readonly IVsServiceProvider provider;
 
-        public event EventHandler<CommandTargetEventArgs> CommandSent; 
+        public event EventHandler<CommandTargetEventArgs> CommandSent;
 
 
         public CommandTarget(IOleCommandTarget baseImpl, Commands commands, IVsServiceProvider provider)
@@ -55,59 +55,56 @@ namespace KOTEM.BariVSPackage.BariExtension
                 var vsStd97CmdID = ToVSStd97CmdID(nCmdID);
                 if (vsStd97CmdID.HasValue)
                 {
-                    var solutionInfo = new SolutionInfo(provider.GetDte());
-                    if (solutionInfo.IsBariSolution)
+                    if (vsStd97CmdID != VSConstants.VSStd97CmdID.SolutionCfg)
                     {
-                        if (vsStd97CmdID != VSConstants.VSStd97CmdID.SolutionCfg)
+                        if (CommandSent != null)
                         {
-                            if (CommandSent != null)
+                            CommandSent(this, new CommandTargetEventArgs(vsStd97CmdID.ToString()));
+                        }
+
+                        Debug.WriteLine("Not slncfg: " + vsStd97CmdID.ToString());
+                    }
+
+                    if (commands.IsDebugging())
+                    {
+                        return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                    }
+                    else
+                    {
+                        Action action;
+                        if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
+                        {
+                            var dte = provider.GetDte();
+                            dte.Documents.SaveAll();
+
+                            action();
+                            return VSConstants.S_OK;
+
+                        }
+                        if (vsStd97CmdID.Value == VSConstants.VSStd97CmdID.Start)
+                        {
+                            if (normalStart > 0)
                             {
-                                CommandSent(this, new CommandTargetEventArgs(vsStd97CmdID.ToString()));
+                                normalStart--;
+                                return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
                             }
-
-                            Debug.WriteLine("Not slncfg: " + vsStd97CmdID.ToString());
-                        }
-
-                        if (commands.IsDebugging())
-                        {
-                            return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
-                        }
-                        else
-                        {
-                            Action action;
-                            if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
+                            else
                             {
                                 var dte = provider.GetDte();
                                 dte.Documents.SaveAll();
-
-                                action();
-                                return VSConstants.S_OK;
-
-                            }
-                            if (vsStd97CmdID.Value == VSConstants.VSStd97CmdID.Start)
-                            {
-                                if (normalStart > 0)
+                                Thread.Sleep(100);
+                                commands.BuildIfNeeded((g) =>
                                 {
-                                    normalStart--;
-                                    return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
-                                }
-                                else
-                                {
-                                    var dte = provider.GetDte();
-                                    dte.Documents.SaveAll();
-                                    Thread.Sleep(100);
-                                    commands.BuildIfNeeded((g) =>
-                                    {
-                                        normalStart = 2;
-                                        dte.ExecuteCommand("Debug.Start");
-                                        return VSConstants.S_OK;
-
-                                    }, pguidCmdGroup);
+                                    normalStart = 2;
+                                    dte.ExecuteCommand("Debug.Start");
                                     return VSConstants.S_OK;
-                                }
+
+                                }, pguidCmdGroup);
+                                return VSConstants.S_OK;
                             }
                         }
                     }
+
                 }
                 return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
             }
