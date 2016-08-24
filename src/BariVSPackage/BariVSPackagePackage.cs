@@ -51,7 +51,8 @@ namespace KOTEM.BariVSPackage
         private readonly HashSet<string> itemsToReload = new HashSet<string>();
         private readonly HashSet<string> itemsToAddDelete = new HashSet<string>();
         private readonly Dictionary<string, bool> documents = new Dictionary<string, bool>();
-        private SolutionInfo ssolutionInfo;
+        private SolutionInfo solutionInfo;
+        private bool solutionLoaded;
 
         private uint solutionEventsCoockie;
 
@@ -77,13 +78,13 @@ namespace KOTEM.BariVSPackage
         {
             get
             {
-                if (ssolutionInfo == null)
+                if (solutionInfo == null)
                 {
-                    ssolutionInfo = new SolutionInfo(GetDte().Solution.FileName);
+                    solutionInfo = new SolutionInfo(GetDte().Solution.FileName);
                 }
-                return ssolutionInfo;
+                return solutionInfo;
             }
-            set { ssolutionInfo = value; }
+            set { solutionInfo = value; }
         }
 
         public bool IsDebugging
@@ -147,8 +148,9 @@ namespace KOTEM.BariVSPackage
                 UnRegisterPriorityCommandTarget();
                 UnRegisterKeyboardHook();
                 UnRegisterFileSystemWatcher();
-                //UnRegisterDialogKiller();
+                UnRegisterDialogKiller();
                 UnRegisterReloadTimer();
+                DetachPluginFromSolution();
             }
         }
 
@@ -425,11 +427,6 @@ namespace KOTEM.BariVSPackage
                 itemsToAddDelete.Add(item.Key);
             }
             reloadTimer.Start();
-        }
-
-        private bool IsVSChange(IDictionary<string, WatcherChangeTypes> dictionary)
-        {
-            return dictionary.All(p => p.Value == WatcherChangeTypes.Created && IsFileInProject(p.Key) || p.Value == WatcherChangeTypes.Deleted && !IsFileInProject(p.Key));
         }
 
         private void ReloadTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)
@@ -709,49 +706,8 @@ namespace KOTEM.BariVSPackage
             return (T)GetService(typeof(T));
         }
 
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-
-                var vsSolution = GetService(typeof(SVsSolution)) as IVsSolution;
-                if (vsSolution != null)
-                {
-                    vsSolution.UnadviseSolutionEvents(solutionEventsCoockie);
-                }
-
-                GetDte().Events.SolutionEvents.Opened -= SolutionEvents_Opened;
-                GetDte().Events.SolutionEvents.BeforeClosing -= SolutionEvents_BeforeClosing;
-                GetDte().Events.DebuggerEvents.OnEnterDesignMode -= DebuggerEvents_OnEnterDesignMode;
-
-                if (target != null)
-                {
-                    target.CommandSent -= target_CommandSent;
-                }
-
-                if (commands != null)
-                {
-                    commands.CommandFinished -= commands_CommandFinished;
-                    commands.CommandStarted -= commands_CommandStarted;
-                    commands.Dispose();
-                }
-
-                UnRegisterPriorityCommandTarget();
-
-                base.Dispose(disposing);
-
-                UnRegisterDialogKiller();
-
-                UnRegisterKeyboardHook();
-
-                UnRegisterFileSystemWatcher();
-
-                UnRegisterReloadTimer();
-            }
-        }
-
-
         #region IVsSolutionLoadEvents
+
         int IVsSolutionLoadEvents.OnAfterBackgroundSolutionLoadComplete()
         {
             return VSConstants.S_OK;
@@ -764,7 +720,39 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionLoadEvents.OnBeforeBackgroundSolutionLoadBegins()
         {
-            SolutionInfo = new SolutionInfo(GetDte().Solution.FileName);
+            if (!solutionLoaded && solutionInfo == null)
+            {
+                solutionLoaded = true;
+                AttachPluginToSolution();
+            }
+
+            return VSConstants.S_OK;
+        }
+
+        private void DetachPluginFromSolution()
+        {
+            GetDte().Events.SolutionEvents.Opened -= SolutionEvents_Opened;
+            GetDte().Events.SolutionEvents.BeforeClosing -= SolutionEvents_BeforeClosing;
+            GetDte().Events.DebuggerEvents.OnEnterDesignMode -= DebuggerEvents_OnEnterDesignMode;
+
+            if (target != null)
+            {
+                target.CommandSent -= target_CommandSent;
+            }
+
+            if (commands != null)
+            {
+                commands.CommandFinished -= commands_CommandFinished;
+                commands.CommandStarted -= commands_CommandStarted;
+                commands.Dispose();
+            }
+        }
+
+        private void AttachPluginToSolution(string fileName = "")
+        {
+            SolutionInfo = new SolutionInfo(string.IsNullOrEmpty(fileName) ? GetDte().Solution.FileName : fileName);
+
+            Debug.WriteLine("Solution name: {0}", SolutionInfo.Solution);
 
             if (SolutionInfo.IsBariSolution)
             {
@@ -776,11 +764,15 @@ namespace KOTEM.BariVSPackage
                 target.CommandSent += target_CommandSent;
 
                 RegisterDialogKiller();
+
                 GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
                 GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
                 GetDte().Events.DebuggerEvents.OnEnterDesignMode += DebuggerEvents_OnEnterDesignMode;
             }
-            return VSConstants.S_OK;
+            else
+            {
+                SolutionInfo = null;
+            }
         }
 
         int IVsSolutionLoadEvents.OnBeforeLoadProjectBatch(bool fIsBackgroundIdleBatch)
@@ -790,6 +782,12 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionLoadEvents.OnBeforeOpenSolution(string pszSolutionFilename)
         {
+            if (!solutionLoaded && solutionInfo == null)
+            {
+                solutionLoaded = true;
+                AttachPluginToSolution(pszSolutionFilename);
+            }
+
             return VSConstants.S_OK;
         }
 
@@ -801,6 +799,9 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionEvents.OnAfterCloseSolution(object pUnkReserved)
         {
+            solutionLoaded = false;
+            SolutionInfo = null;
+            
             return VSConstants.S_OK;
         }
 
@@ -816,6 +817,12 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionEvents.OnAfterOpenSolution(object pUnkReserved, int fNewSolution)
         {
+            if (!solutionLoaded && solutionInfo == null)
+            {
+                solutionLoaded = true;
+                AttachPluginToSolution();
+            }
+
             return VSConstants.S_OK;
         }
 
@@ -857,5 +864,31 @@ namespace KOTEM.BariVSPackage
             GC.SuppressFinalize(this);
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+
+                var vsSolution = GetService(typeof(SVsSolution)) as IVsSolution;
+                if (vsSolution != null)
+                {
+                    vsSolution.UnadviseSolutionEvents(solutionEventsCoockie);
+                }
+
+                DetachPluginFromSolution();
+
+                UnRegisterPriorityCommandTarget();
+
+                base.Dispose(disposing);
+
+                UnRegisterDialogKiller();
+
+                UnRegisterKeyboardHook();
+
+                UnRegisterFileSystemWatcher();
+
+                UnRegisterReloadTimer();
+            }
+        }
     }
 }
