@@ -25,12 +25,12 @@ namespace KOTEM.BariVSPackage.BariExtension
             get { return bariShell.IsRunning; }
         }
 
-        public Commands(IVsServiceProvider owner)
+        public Commands(IVsServiceProvider owner, string solutionFileName)
         {
             this.owner = owner;
             isBuildNeeded = true;
 
-            var solutionInfo = new SolutionInfo(GetDte().Solution.FileName);
+            var solutionInfo = new SolutionInfo(string.IsNullOrEmpty(solutionFileName) ? GetDte().Solution.FileName : solutionFileName);
             var workingDirectory = solutionInfo.BariWorkingDirectory;
 
             var output = owner.GetService<SVsOutputWindow>() as IVsOutputWindow;

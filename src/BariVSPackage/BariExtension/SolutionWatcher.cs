@@ -84,7 +84,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return;
             }
 
-         //   Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
+            Debug.WriteLine("FileSystemChanged {0} - {1}", e.FullPath, e.ChangeType);
 
             if (extensions.Contains(ext) && Changed != null)
             {
@@ -108,13 +108,16 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return;
             }
 
-      //      Debug.WriteLine("{0} - {1}", e.FullPath, e.ChangeType);
+            Debug.WriteLine("FileSystemChangedDelRenameCreated {0} - {1}", e.FullPath, e.ChangeType);
 
             if ((e.ChangeType == WatcherChangeTypes.Deleted || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
             {
-                if (!delAddFiles.ContainsKey(e.FullPath))
+                lock (delAddFiles)
                 {
-                    delAddFiles.Add(e.FullPath, e.ChangeType);
+                    if (!delAddFiles.ContainsKey(e.FullPath))
+                    {
+                        delAddFiles.Add(e.FullPath, e.ChangeType);
+                    }
                 }
                 delAddTimer.Stop();
                 delAddTimer.Start();
@@ -144,11 +147,15 @@ namespace KOTEM.BariVSPackage.BariExtension
             {
                 if (e.ChangeType == WatcherChangeTypes.Renamed)
                 {
-                    var fakeDeletes = delAddFiles.Where(d => Path.GetFileName(d.Key).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
-                    foreach (var fakeDelete in fakeDeletes)
+                    lock (delAddFiles)
                     {
-                        delAddFiles.Remove(fakeDelete);
-                        FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
+                        var fakeDeletes = delAddFiles.Where(d => Path.GetFileName(d.Key).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
+                        foreach (var fakeDelete in fakeDeletes)
+                        {
+                            delAddFiles.Remove(fakeDelete);
+                            Debug.WriteLine("CheckFakeDelete - Remove {0} - {1}", e.FullPath, e.ChangeType);
+                            FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
+                        }
                     }
                 }
                 else if (e.ChangeType != WatcherChangeTypes.Changed)
@@ -161,13 +168,19 @@ namespace KOTEM.BariVSPackage.BariExtension
         private void deleteTimerOnElapsed(object sender, ElapsedEventArgs e)
         {
             delAddTimer.Stop();
-
-            if (ReloadNeeded != null && delAddFiles.Any() && !delAddFiles.All(p => p.Value == WatcherChangeTypes.Created && isFileOpenedInSln(p.Key) || p.Value == WatcherChangeTypes.Deleted && !isFileOpenedInSln(p.Key)))
+            lock (delAddFiles)
             {
-                ReloadNeeded(this, new ReloadEventArgs(delAddFiles.Where(f => extensions.Contains((Path.GetExtension(f.Key) ?? string.Empty).ToLower())).ToDictionary(k => k.Key, k => k.Value)) { ReBuildNeeded = !delAddFiles.Any(f => projExtensions.Contains(f.Key)) });
-            }
+                if (ReloadNeeded != null && delAddFiles.Any() && !delAddFiles.All(p => p.Value == WatcherChangeTypes.Created && isFileOpenedInSln(p.Key) || p.Value == WatcherChangeTypes.Deleted && !isFileOpenedInSln(p.Key)))
+                {
+                    ReloadNeeded(this,
+                        new ReloadEventArgs(delAddFiles.Where(f => extensions.Contains((Path.GetExtension(f.Key) ?? string.Empty).ToLower())).ToDictionary(k => k.Key, k => k.Value))
+                        {
+                            ReBuildNeeded = !delAddFiles.Any(f => projExtensions.Contains(f.Key))
+                        });
+                }
 
-            delAddFiles.Clear();
+                delAddFiles.Clear();
+            }
         }
 
         protected virtual void Dispose(bool disposing)

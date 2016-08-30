@@ -109,7 +109,7 @@ namespace KOTEM.BariVSPackage
                 vsSolution.AdviseSolutionEvents(this, out solutionEventsCoockie);
             }
 
-            
+
 
             base.Initialize();
         }
@@ -416,17 +416,27 @@ namespace KOTEM.BariVSPackage
                 return;
             }
 
-            reloadTimer.Stop();
-            if (e.ReBuildNeeded)
+            var timerNeeded = !commandRunning;
+
+            if (timerNeeded)
             {
-                commands.IsBuildNeeded = true;
-                reBuildNeeded = true;
+                reloadTimer.Stop();
+
+                if (e.ReBuildNeeded)
+                {
+                    commands.IsBuildNeeded = true;
+                    reBuildNeeded = true;
+                }
             }
             foreach (var item in e.ItemsToReload)
             {
                 itemsToAddDelete.Add(item.Key);
             }
-            reloadTimer.Start();
+
+            if (timerNeeded)
+            {
+                reloadTimer.Start();
+            }
         }
 
         private void ReloadTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)
@@ -519,10 +529,12 @@ namespace KOTEM.BariVSPackage
                 var onlySolution =
                     itemsToReload.Any(item => item.ToLower().EndsWith(".sln") || item.ToLower().EndsWith(".yaml"));
 
-                var items = itemsToReload.Where(file => extensions.Contains(Path.GetExtension(file))).Select(project => GetProject(GetProjectName(project)));
-                items = items.Where(i => i != null).Distinct();
+                var items = itemsToReload.Where(file => extensions.Contains(Path.GetExtension(file))).Select(project => GetProjectName(project));
+                items = items.Where(i => i != null).Distinct().ToList();
 
-                onlySolution = onlySolution || (items.Count() > (GetDte().Solution.Projects.Count / 2));
+                var projectItems = items.Select(p => GetProject(p));
+
+                onlySolution = onlySolution || (projectItems.Count() > (GetDte().Solution.Projects.Count / 2));
 
                 if (onlySolution)
                 {
@@ -530,10 +542,10 @@ namespace KOTEM.BariVSPackage
                 }
                 else
                 {
-                    SaveDocuments(items.Select(p => p.UniqueName).ToList());
+                    SaveDocuments(projectItems.Select(p => p.UniqueName).ToList());
                     SaveStartupProject();
 
-                    foreach (var item in items)
+                    foreach (var item in projectItems)
                     {
                         ReloadProject(SolutionInfo, item);
                     }
@@ -571,7 +583,7 @@ namespace KOTEM.BariVSPackage
                 return;
 
             var projects = reopenedProjects.Select(p => GetProjectName(p)).ToList();
-            activeDocument = GetDte().ActiveDocument.FullName;
+            activeDocument = GetDte().ActiveDocument == null ? string.Empty : GetDte().ActiveDocument.FullName;
 
             documents.Clear();
             foreach (var document in GetDte().Documents.OfType<Document>().Where(d => projects.Contains(GetProjectName(d.FullName))))
@@ -738,6 +750,7 @@ namespace KOTEM.BariVSPackage
             if (target != null)
             {
                 target.CommandSent -= target_CommandSent;
+                target = null;
             }
 
             if (commands != null)
@@ -745,6 +758,7 @@ namespace KOTEM.BariVSPackage
                 commands.CommandFinished -= commands_CommandFinished;
                 commands.CommandStarted -= commands_CommandStarted;
                 commands.Dispose();
+                commands = null;
             }
         }
 
@@ -756,7 +770,7 @@ namespace KOTEM.BariVSPackage
 
             if (SolutionInfo.IsBariSolution)
             {
-                commands = new Commands(this);
+                commands = new Commands(this, fileName);
                 commands.CommandFinished += commands_CommandFinished;
                 commands.CommandStarted += commands_CommandStarted;
 
@@ -801,7 +815,7 @@ namespace KOTEM.BariVSPackage
         {
             solutionLoaded = false;
             SolutionInfo = null;
-            
+
             return VSConstants.S_OK;
         }
 
@@ -855,7 +869,7 @@ namespace KOTEM.BariVSPackage
         {
             return VSConstants.S_OK;
         }
-        
+
         #endregion
 
         public void Dispose()
