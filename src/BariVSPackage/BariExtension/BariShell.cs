@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Management;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using KOTEM.BariVSPackage.Properties;
@@ -27,7 +28,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         private bool running;
 
         public event EventHandler<BariCommandArgs> CommandFinished;
-        public event EventHandler<BariCommandArgs> CommandStarted; 
+        public event EventHandler<BariCommandArgs> CommandStarted;
 
         public BariShell(string bariPath, string goal, string productName, string workingDirectory, BariOutputPane bariOutputPane)
         {
@@ -52,15 +53,15 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
             try
             {
-                var arguments = string.Format("{0} --target {1} {2} {3} {4}", 
-                            Settings.Default.Verbose ? " -v " : string.Empty, 
-                            goal, 
-                            actionName, 
+                var arguments = string.Format("{0} --target {1} {2} {3} {4}",
+                            Settings.Default.Verbose ? " -v " : string.Empty,
+                            goal,
+                            actionName,
                             productName,
                             Settings.Default.SoftClean && (actionName.StartsWith("rebuild") || actionName.StartsWith("clean")) ? " --soft-clean " : string.Empty);
 
                 ShowOutput(string.Format("{0} {1}", bariPath, arguments));
-                
+
                 var processStartInfo = new ProcessStartInfo(
                     bariPath,
                     arguments)
@@ -89,7 +90,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                         proc.WaitForExit(100);
                         if (isCancellationRequested)
                         {
-                            proc.Kill();
+                            KillProcessAndChildren(proc.Id);
                             ShowOutput("Build cancelled.");
                             cancelled = true;
                             frame.Continue = false;
@@ -117,6 +118,29 @@ namespace KOTEM.BariVSPackage.BariExtension
                 {
                     CommandFinished(this, new BariCommandArgs(actionName));
                 }
+            }
+        }
+
+        /// <summary>
+        /// Kill a process, and all of its children, grandchildren, etc.
+        /// </summary>
+        /// <param name="pid">Process ID.</param>
+        private static void KillProcessAndChildren(int pid)
+        {
+            var searcher = new ManagementObjectSearcher("Select * From Win32_Process Where ParentProcessID=" + pid);
+            var moc = searcher.Get();
+            foreach (var mo in moc)
+            {
+                KillProcessAndChildren(Convert.ToInt32(mo["ProcessID"]));
+            }
+            try
+            {
+                var proc = Process.GetProcessById(pid);
+                proc.Kill();
+            }
+            catch (ArgumentException)
+            {
+                // Process already exited.
             }
         }
 
