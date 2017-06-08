@@ -1,6 +1,5 @@
 using System.IO;
 using EnvDTE;
-using JetBrains.Annotations;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -15,7 +14,6 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         public string Solution { get; private set; }
 
-        [CanBeNull]
         public string TargetWorkingDirectory
         {
             get
@@ -32,7 +30,6 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
         }
 
-        [CanBeNull]
         public string BariWorkingDirectory
         {
             get
