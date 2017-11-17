@@ -178,24 +178,40 @@ namespace KOTEM.BariVSPackage
         {
             if (Properties.Settings.Default.SetStartUpProject)
             {
-                var startProject =
-                    SolutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
+                var cppProject = false;
+                var startProject = SolutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
 
                 if (string.IsNullOrEmpty(startProject)) return;
 
                 var startupProject = GetProject(startProject);
 
+                if (startupProject == null)
+                {
+                    startProject = Path.ChangeExtension(startProject, "vcxproj");
+                    startupProject = GetProject(startProject);
+                    cppProject = true;
+                }
+
                 if (startupProject == null) return;
 
                 GetDte().Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
-
-                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartAction").Value =
-                    (int)StartAction.Program;
-                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartProgram").Value =
-                    Path.GetDirectoryName(SolutionInfo.Solution) + "\\" + SolutionInfo.BariConfig.Target
-                    + "\\" + SolutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
-                startupProject.ConfigurationManager.ActiveConfiguration.Properties.Item("StartArguments").Value =
-                    Properties.Settings.Default.StartArguments;
+             
+                var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
+                var startProgram = Path.GetDirectoryName(SolutionInfo.Solution) + "\\" + SolutionInfo.BariConfig.Target
+                                   + "\\" + SolutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
+                if (cppProject)
+                {
+                    activeConfogProps.Item("Command").Value = startProgram;
+                    activeConfogProps.Item("CommandArguments").Value = Properties.Settings.Default.StartArguments;
+                    activeConfogProps.Item("WorkingDirectory").Value = Path.GetDirectoryName(startProgram);
+                }
+                else
+                {
+                    activeConfogProps.Item("StartAction").Value = (int)StartAction.Program;
+                    activeConfogProps.Item("StartProgram").Value = startProgram;
+                    activeConfogProps.Item("StartArguments").Value = Properties.Settings.Default.StartArguments;
+                    activeConfogProps.Item("StartWorkingDirectory").Value = Path.GetDirectoryName(startProgram);
+                }
             }
         }
 
