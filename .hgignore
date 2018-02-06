@@ -9,3 +9,4 @@ relre:^src/.*\.cache$
 relre:^src/.*\.user$
 *.orig
 *.rej
+*.patch
