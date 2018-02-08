@@ -1,17 +1,19 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Timers;
+using Timer = System.Timers.Timer;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
     internal class SolutionWatcher : IDisposable
     {
-        private readonly Predicate<string> isFileOpenedInSln;
-        private readonly IEnumerable<string> openedProjects;
-
         public class ReloadEventArgs : EventArgs
         {
             public IDictionary<string, WatcherChangeTypes> ItemsToReload { get; set; }
@@ -27,15 +29,36 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
         }
 
-        private FileSystemWatcher watcher;
-        private FileSystemWatcher yamlWatcher;
+        private class ChangeCompare : IEqualityComparer<KeyValuePair<string, byte[]>>
+        {
+            public bool Equals(KeyValuePair<string, byte[]> x, KeyValuePair<string, byte[]> y)
+            {
+                return x.Key.Equals(y.Key) && x.Value.SequenceEqual(y.Value);
+            }
+
+            public int GetHashCode(KeyValuePair<string, byte[]> obj)
+            {
+                return 0;
+            }
+        }
+
+        private readonly ChangeCompare changeComparer = new ChangeCompare();
+        private readonly Predicate<string> isFileOpenedInSln;
+        private readonly IEnumerable<string> openedProjects;
+        private readonly MD5 md5 = MD5.Create();
         private readonly HashSet<string> extensions;
         private readonly HashSet<string> projExtensions;
+        private readonly Semaphore sema = new Semaphore(1, 1);
+        private readonly IList<string> changedFiles = new List<string>();
+
+        private IDictionary<string, byte[]> checkSums;
+        private FileSystemWatcher watcher;
+        private FileSystemWatcher yamlWatcher;
         private Timer delAddTimer;
-        private readonly IDictionary<string, WatcherChangeTypes> delAddFiles = new Dictionary<string, WatcherChangeTypes>();
+
+        public string YamlPath { get; }
 
         public event EventHandler<ReloadEventArgs> Changed;
-        public event EventHandler<ReloadEventArgs> ReloadNeeded;
 
         public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension, IEnumerable<string> openedProjects, Predicate<string> isFileOpenedInSln)
         {
@@ -45,14 +68,15 @@ namespace KOTEM.BariVSPackage.BariExtension
             projExtensions = new HashSet<string>(projectExtension);
 
             watcher = new FileSystemWatcher(srcDir)
-                          {
-                              EnableRaisingEvents = true,
-                              IncludeSubdirectories = true,
-                              InternalBufferSize = 64 * 1024, // this is max
-                              Filter = "*.*",
-                              NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
-                          };
+            {
+                EnableRaisingEvents = true,
+                IncludeSubdirectories = true,
+                InternalBufferSize = 64 * 1024, // this is max
+                Filter = "*.*",
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
+            };
 
+            YamlPath = Directory.GetParent(srcDir).GetFiles("*.yaml").FirstOrDefault().FullName;
             yamlWatcher = new FileSystemWatcher(Directory.GetParent(srcDir).FullName)
             {
                 EnableRaisingEvents = true,
@@ -62,18 +86,29 @@ namespace KOTEM.BariVSPackage.BariExtension
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
             };
 
-            watcher.Changed += FileSystemChanged;
-            watcher.Deleted += FileSystemChangedDelRenameCreated;
-            watcher.Created += FileSystemChangedDelRenameCreated;
-            watcher.Renamed += FileSystemChangedDelRenameCreated;
 
+            Task.Factory.StartNew(() =>
+            {
+                sema.WaitOne();
+                checkSums = this.openedProjects.AsParallel().SelectMany(p => Directory
+                    .EnumerateFiles(p, "*.*", SearchOption.AllDirectories).AsParallel()
+                    .Where(file => projExtensions.Any(e => file.ToLower().EndsWith(e)) || extensions.Any(e => file.ToLower().EndsWith(e))))
+                    .Distinct().AsParallel().ToDictionary(f => f.ToLowerInvariant(), ComputeChecksum);
+
+                checkSums.Add(YamlPath.ToLowerInvariant(), ComputeChecksum(YamlPath));
+                sema.Release();
+            });
+            watcher.Changed += FileSystemChanged;
+            watcher.Deleted += FileSystemChanged;
+            watcher.Created += FileSystemChanged;
+            watcher.Renamed += FileSystemChanged;
             yamlWatcher.Changed += FileSystemChanged;
-            yamlWatcher.Deleted += FileSystemChangedDelRenameCreated;
-            yamlWatcher.Created += FileSystemChangedDelRenameCreated;
-            yamlWatcher.Renamed += FileSystemChangedDelRenameCreated;
+            yamlWatcher.Deleted += FileSystemChanged;
+            yamlWatcher.Created += FileSystemChanged;
+            yamlWatcher.Renamed += FileSystemChanged;
 
             delAddTimer = new Timer(501);
-            delAddTimer.Elapsed += deleteTimerOnElapsed;
+            delAddTimer.Elapsed += DeleteTimerOnElapsed;
         }
 
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
@@ -86,100 +121,122 @@ namespace KOTEM.BariVSPackage.BariExtension
 
             Debug.WriteLine("FileSystemChanged {0} - {1}", e.FullPath, e.ChangeType);
 
-            if (extensions.Contains(ext) && Changed != null)
+            lock (changedFiles)
             {
-                Changed(this, new ReloadEventArgs(e.FullPath, WatcherChangeTypes.Changed));
-                CheckFakeDelete(sender, e, ext);
+                changedFiles.Add(e.FullPath);
             }
-            if (e.ChangeType == WatcherChangeTypes.Changed && projExtensions.Contains(ext))
-            {
-                if (ReloadNeeded != null)
-                {
-                    ReloadNeeded(this, new ReloadEventArgs(e.FullPath, WatcherChangeTypes.Changed) { ReBuildNeeded = ext.EndsWith("yaml") });
-                }
-            }
-        }
-
-        private void FileSystemChangedDelRenameCreated(object sender, FileSystemEventArgs e)
-        {
-            var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
-            if (CheckProjects(e.FullPath.ToLower(), ext))
-            {
-                return;
-            }
-
-            Debug.WriteLine("FileSystemChangedDelRenameCreated {0} - {1}", e.FullPath, e.ChangeType);
-
-            if ((e.ChangeType == WatcherChangeTypes.Deleted || e.ChangeType == WatcherChangeTypes.Created) && (extensions.Contains(ext) || projExtensions.Contains(ext)))
-            {
-                lock (delAddFiles)
-                {
-                    if (!delAddFiles.ContainsKey(e.FullPath))
-                    {
-                        delAddFiles.Add(e.FullPath, e.ChangeType);
-                    }
-                }
-                delAddTimer.Stop();
-                delAddTimer.Start();
-                return;
-            }
-
-            CheckFakeDelete(sender, e, ext);
+            delAddTimer.Stop();
+            delAddTimer.Start();
         }
 
         private bool CheckProjects(string e, string ext)
         {
             if (string.IsNullOrEmpty(ext))
             {
-                return true;
+                return false;
             }
 
-            if (!openedProjects.AsParallel().Any(p => e.StartsWith(p)) && !ext.EndsWith("yaml"))
+            if (!openedProjects.AsParallel().Any(e.StartsWith) && !ext.EndsWith("yaml"))
             {
                 return true;
             }
             return false;
         }
 
-        private void CheckFakeDelete(object sender, FileSystemEventArgs e, string ext)
+        private bool IsFolder(string path)
         {
-            if (extensions.Contains(ext) || projExtensions.Contains(ext))
+            return string.IsNullOrEmpty(Path.GetExtension(path) ?? string.Empty);
+        }
+
+        private void DeleteTimerOnElapsed(object sender, ElapsedEventArgs e)
+        {
+            delAddTimer.Stop();
+            sema.WaitOne();
+            CheckFiles();
+            sema.Release();
+        }
+
+        private void CheckFiles()
+        {
+            IList<string> files;
+            lock (changedFiles)
             {
-                if (e.ChangeType == WatcherChangeTypes.Renamed)
+                files = changedFiles.Distinct()
+                                    .Select(f => f.ToLowerInvariant())
+                                    .Where(file => IsFolder(file) || projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith) || file.EndsWith(".yaml"))
+                                    .ToList();
+                changedFiles.Clear();
+            }
+
+            var oldCheckSums = files.SelectMany(p => checkSums.AsParallel().Where(f => Path.GetDirectoryName(f.Key).Equals(IsFolder(p) ? p : Path.GetDirectoryName(p)))).ToList().Distinct();
+
+            var currentCheckSums = files.AsParallel().SelectMany(p => Directory
+                .EnumerateFiles(IsFolder(p) ? p : Path.GetDirectoryName(p), "*.*", SearchOption.TopDirectoryOnly)
+                .Where(file => projExtensions.Any(e => file.ToLower().EndsWith(e)) || extensions.Any(e => file.ToLower().EndsWith(e))))
+                .Distinct().AsParallel().ToDictionary(f => f.ToLowerInvariant(), ComputeChecksum);
+
+            var added = new List<KeyValuePair<string, byte[]>>();
+            var deleted = new List<KeyValuePair<string, byte[]>>();
+            foreach (var currentCheckSum in currentCheckSums)
+            {
+                if (!checkSums.ContainsKey(currentCheckSum.Key))
                 {
-                    lock (delAddFiles)
-                    {
-                        var fakeDeletes = delAddFiles.Where(d => Path.GetFileName(d.Key).ToLower().StartsWith(Path.GetFileName(e.FullPath.ToLower()))).ToList();
-                        foreach (var fakeDelete in fakeDeletes)
-                        {
-                            delAddFiles.Remove(fakeDelete);
-                            Debug.WriteLine("CheckFakeDelete - Remove {0} - {1}", e.FullPath, e.ChangeType);
-                            FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
-                        }
-                    }
+                    added.Add(currentCheckSum);
                 }
-                else if (e.ChangeType != WatcherChangeTypes.Changed)
+            }
+
+            foreach (var keyValuePair in oldCheckSums)
+            {
+                if (!currentCheckSums.ContainsKey(keyValuePair.Key))
                 {
-                    FileSystemChanged(sender, new FileSystemEventArgs(WatcherChangeTypes.Changed, Path.GetDirectoryName(e.FullPath), e.FullPath));
+                    deleted.Add(keyValuePair);
                 }
+            }
+
+            var changed = currentCheckSums.Except(oldCheckSums, changeComparer).ToList();
+
+            var args = new Dictionary<string, WatcherChangeTypes>();
+
+            foreach (var keyValuePair in added)
+            {
+                checkSums.Add(keyValuePair);
+                if (!isFileOpenedInSln(keyValuePair.Key))
+                {
+                    args.Add(keyValuePair.Key, WatcherChangeTypes.Created);
+                }
+            }
+
+            foreach (var keyValuePair in deleted)
+            {
+                checkSums.Remove(keyValuePair.Key);
+                if (isFileOpenedInSln(keyValuePair.Key))
+                {
+                    args.Add(keyValuePair.Key, WatcherChangeTypes.Deleted);
+                }
+                else
+                {
+                    args.Add(keyValuePair.Key, WatcherChangeTypes.Changed);
+                }
+            }
+
+            foreach (var keyValuePair in changed)
+            {
+                checkSums[keyValuePair.Key] = keyValuePair.Value;
+                args[keyValuePair.Key] = WatcherChangeTypes.Changed;
+            }
+
+            if (args.Any())
+            {
+                Changed?.Invoke(this, new ReloadEventArgs(args) { ReBuildNeeded = args.Any(ct=> ct.Value == WatcherChangeTypes.Created || (ct.Value & WatcherChangeTypes.Deleted) != 0)|| changed.Any(c => c.Key.EndsWith(".yaml")) });
             }
         }
 
-        private void deleteTimerOnElapsed(object sender, ElapsedEventArgs e)
+        private byte[] ComputeChecksum(string path)
         {
-            delAddTimer.Stop();
-            lock (delAddFiles)
+            using (var stream = File.OpenRead(path))
+            using (var bufferedStream = new BufferedStream(stream, 1048576))
             {
-                if (ReloadNeeded != null && delAddFiles.Any() && !delAddFiles.All(p => p.Value == WatcherChangeTypes.Created && isFileOpenedInSln(p.Key) || p.Value == WatcherChangeTypes.Deleted && !isFileOpenedInSln(p.Key)))
-                {
-                    ReloadNeeded(this,
-                        new ReloadEventArgs(delAddFiles.Where(f => extensions.Contains((Path.GetExtension(f.Key) ?? string.Empty).ToLower())).ToDictionary(k => k.Key, k => k.Value))
-                        {
-                            ReBuildNeeded = !delAddFiles.Any(f => projExtensions.Contains(f.Key))
-                        });
-                }
-
-                delAddFiles.Clear();
+                return md5.ComputeHash(bufferedStream);
             }
         }
 
@@ -190,9 +247,6 @@ namespace KOTEM.BariVSPackage.BariExtension
                 if (watcher != null)
                 {
                     watcher.Changed -= FileSystemChanged;
-                    watcher.Deleted -= FileSystemChangedDelRenameCreated;
-                    watcher.Created -= FileSystemChangedDelRenameCreated;
-                    watcher.Renamed -= FileSystemChangedDelRenameCreated;
                     watcher.Dispose();
                     watcher = null;
                 }
@@ -200,9 +254,6 @@ namespace KOTEM.BariVSPackage.BariExtension
                 if (yamlWatcher != null)
                 {
                     yamlWatcher.Changed -= FileSystemChanged;
-                    yamlWatcher.Deleted -= FileSystemChangedDelRenameCreated;
-                    yamlWatcher.Created -= FileSystemChangedDelRenameCreated;
-                    yamlWatcher.Renamed -= FileSystemChangedDelRenameCreated;
                     yamlWatcher.Dispose();
                     yamlWatcher = null;
                 }
@@ -210,7 +261,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 if (delAddTimer != null)
                 {
                     delAddTimer.Stop();
-                    delAddTimer.Elapsed -= deleteTimerOnElapsed;
+                    delAddTimer.Elapsed -= DeleteTimerOnElapsed;
                     delAddTimer.Dispose();
                     delAddTimer = null;
                 }

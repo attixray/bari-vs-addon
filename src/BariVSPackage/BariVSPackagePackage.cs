@@ -8,6 +8,7 @@ using KOTEM.BariVSPackage.BariExtension.Option;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.VCProjectEngine;
 using KOTEM.BariVSPackage.BariExtension;
 using System.Windows.Forms;
 using System.IO;
@@ -41,6 +42,13 @@ namespace KOTEM.BariVSPackage
     [Guid(GuidList.guidBariVSPackagePkgString)]
     public sealed class BariVsPackagePackage : Package, IDisposable, IVsServiceProvider, IVsSolutionLoadEvents, IVsSolutionEvents
     {
+        private enum ChangeTypeEnum
+        {
+            OnlyBuild,
+            YamlChange,
+            FileAddOrDelete,
+        }
+
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
         private Commands commands;
@@ -48,14 +56,15 @@ namespace KOTEM.BariVSPackage
         private CommandTarget target;
         private ReloadDialogKiller dialogKiller;
         private Timer reloadTimer;
-        private readonly HashSet<string> itemsToReload = new HashSet<string>();
-        private readonly HashSet<string> itemsToAddDelete = new HashSet<string>();
+        private readonly HashSet<string> itemsChanged = new HashSet<string>();
+        private readonly HashSet<string> itemsChangedDuringCommand = new HashSet<string>();
         private readonly Dictionary<string, bool> documents = new Dictionary<string, bool>();
         private SolutionInfo solutionInfo;
         private bool solutionLoaded;
 
         private uint solutionEventsCoockie;
 
+        private ChangeTypeEnum changeType;
         private bool reloadNeededAfterDebug;
         private bool reBuildNeeded;
         private bool reloading;
@@ -128,8 +137,32 @@ namespace KOTEM.BariVSPackage
 
         private void commands_CommandFinished(object sender, BariShell.BariCommandArgs e)
         {
+            if (changeType != ChangeTypeEnum.OnlyBuild)
+            {
+                if (changeType == ChangeTypeEnum.YamlChange)
+                {
+                    foreach (var collection in itemsChangedDuringCommand)
+                    {
+                        itemsChanged.Add(collection);
+                    }
+                    
+                }
+
+                if (Properties.Settings.Default.PromptReload)
+                {
+                    if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
+                    {
+                        Reload();
+                    }
+                }
+                else
+                {
+                    Reload();
+                }
+            }
+            itemsChangedDuringCommand.Clear();
+            itemsChanged.Clear();
             commandRunning = false;
-            ProcessReload();
         }
 
         private void DebuggerEvents_OnEnterDesignMode(dbgEventReason Reason)
@@ -168,7 +201,7 @@ namespace KOTEM.BariVSPackage
                     RegisterReloadTimer();
                     SetStartUpProject();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                 }
             }
@@ -195,18 +228,23 @@ namespace KOTEM.BariVSPackage
                 if (startupProject == null) return;
 
                 GetDte().Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
-             
-                var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
+
+
                 var startProgram = Path.GetDirectoryName(SolutionInfo.Solution) + "\\" + SolutionInfo.BariConfig.Target
                                    + "\\" + SolutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
                 if (cppProject)
                 {
-                    activeConfogProps.Item("Command").Value = startProgram;
-                    activeConfogProps.Item("CommandArguments").Value = Properties.Settings.Default.StartArguments;
-                    activeConfogProps.Item("WorkingDirectory").Value = Path.GetDirectoryName(startProgram);
+                    var prj = startupProject.Object as VCProject;
+                    VCConfiguration config = prj.Configurations.Item("Bari");
+                    var debugsettings = config.DebugSettings as VCDebugSettings;
+
+                    debugsettings.Command = startProgram;
+                    debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
+                    debugsettings.WorkingDirectory = Path.GetDirectoryName(startProgram);
                 }
                 else
                 {
+                    var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
                     activeConfogProps.Item("StartAction").Value = (int)StartAction.Program;
                     activeConfogProps.Item("StartProgram").Value = startProgram;
                     activeConfogProps.Item("StartArguments").Value = Properties.Settings.Default.StartArguments;
@@ -217,11 +255,12 @@ namespace KOTEM.BariVSPackage
 
         public Project GetProject(string name)
         {
+            var lowerName = name.ToLowerInvariant();
             foreach (Project solFolder in GetDte().Solution.Projects)
             {
                 if (solFolder != null)
                 {
-                    if (solFolder.UniqueName.Contains(name))
+                    if (solFolder.UniqueName.ToLowerInvariant().Contains(lowerName))
                         return solFolder;
                 }
 
@@ -231,8 +270,10 @@ namespace KOTEM.BariVSPackage
                     if (tmpItem != null)
                     {
                         Project proj = tmpItem.Object as Project;
-                        if (proj != null && proj.UniqueName.Contains(name))
+                        if (proj != null && proj.UniqueName.ToLowerInvariant().Contains(lowerName))
+                        {
                             return proj;
+                        }
                     }
                 }
             }
@@ -250,7 +291,7 @@ namespace KOTEM.BariVSPackage
 
         private void RegisterReloadTimer()
         {
-            reloadTimer = new Timer(450);
+            reloadTimer = new Timer(150);
             reloadTimer.AutoReset = false;
             reloadTimer.Elapsed += ReloadTimerElapsed;
         }
@@ -299,10 +340,11 @@ namespace KOTEM.BariVSPackage
             if (solutionWatcher != null)
             {
                 solutionWatcher.Changed -= SolutionWatcherOnChanged;
-                solutionWatcher.ReloadNeeded -= SolutionWatcherOnReloadNeeded;
                 solutionWatcher.Dispose();
                 solutionWatcher = null;
             }
+
+            itemsChanged.Clear();
         }
 
         private void RegisterFileSystemWatcher()
@@ -319,7 +361,6 @@ namespace KOTEM.BariVSPackage
 
             solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions, projects, IsFileInProject);
             solutionWatcher.Changed += SolutionWatcherOnChanged;
-            solutionWatcher.ReloadNeeded += SolutionWatcherOnReloadNeeded;
         }
 
         private bool IsFileInProject(string fileName)
@@ -328,7 +369,7 @@ namespace KOTEM.BariVSPackage
 
             var res = false;
 
-            var file = Path.GetFileName(fileName);
+            var file = Path.GetFileName(fileName).ToLowerInvariant();
 
             var items = project.ProjectItems.GetEnumerator();
             while (items.MoveNext())
@@ -340,7 +381,6 @@ namespace KOTEM.BariVSPackage
                 }
             }
 
-
             Debug.WriteLine("IsFileInProject: {0} - {1} - {2}", project.Name, fileName, res);
 
             return res;
@@ -350,12 +390,12 @@ namespace KOTEM.BariVSPackage
         {
             //base case
             if (item.ProjectItems == null)
-                return new List<string> { item.Name };
+                return new List<string> { item.Name.ToLowerInvariant() };
 
             //      Debug.WriteLine("{0} - {1}", item.Name, item.ProjectItems == null ? -1 : item.ProjectItems.Count);
 
             var items = item.ProjectItems.GetEnumerator();
-            var ret = new List<string> { item.Name };
+            var ret = new List<string> { item.Name.ToLowerInvariant() };
             while (items.MoveNext())
             {
                 var currentItem = (ProjectItem)items.Current;
@@ -418,40 +458,57 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionWatcherOnChanged(object sender, SolutionWatcher.ReloadEventArgs e)
         {
-            commands.IsBuildNeeded = true;
-            foreach (var item in e.ItemsToReload)
+            if (commandRunning)
             {
-                itemsToReload.Add(item.Key);
+                foreach (var item in e.ItemsToReload)
+                {
+                    itemsChangedDuringCommand.Add(item.Key);
+                }
             }
-        }
-
-        private void SolutionWatcherOnReloadNeeded(object sender, SolutionWatcher.ReloadEventArgs e)
-        {
-            if (reloading)
+            else
             {
-                return;
-            }
 
-            var timerNeeded = !commandRunning;
 
-            if (timerNeeded)
-            {
-                reloadTimer.Stop();
+                commands.IsBuildNeeded = true;
+                foreach (var item in e.ItemsToReload)
+                {
+                    itemsChanged.Add(item.Key);
+                }
+
+
+                changeType = ChangeTypeEnum.OnlyBuild;
 
                 if (e.ReBuildNeeded)
                 {
-                    commands.IsBuildNeeded = true;
-                    reBuildNeeded = true;
-                }
-            }
-            foreach (var item in e.ItemsToReload)
-            {
-                itemsToAddDelete.Add(item.Key);
-            }
+                    if (reloading)
+                    {
+                        return;
+                    }
 
-            if (timerNeeded)
-            {
-                reloadTimer.Start();
+                    if (itemsChanged.Any(i => i.EndsWith(".yaml")))
+                    {
+                        changeType = ChangeTypeEnum.YamlChange;
+                    }
+                    else
+                    {
+                        changeType = ChangeTypeEnum.FileAddOrDelete;
+                    }
+
+                    var timerNeeded = !commandRunning;
+
+                    if (timerNeeded)
+                    {
+                        reloadTimer.Stop();
+
+                        commands.IsBuildNeeded = true;
+                        reBuildNeeded = true;
+                    }
+
+                    if (timerNeeded)
+                    {
+                        reloadTimer.Start();
+                    }
+                }
             }
         }
 
@@ -496,25 +553,6 @@ namespace KOTEM.BariVSPackage
                 }
                 reBuildNeeded = false;
             }
-            else
-            {
-                if (!commandRunning)
-                {
-                    if (!itemsToAddDelete.All(i => projExtensions.Contains(Path.GetExtension(i))))
-                    {
-                        if (Properties.Settings.Default.PromptReload)
-                        {
-                            if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
-                                Reload();
-                        }
-                        else
-                            Reload();
-
-                    }
-                    itemsToReload.Clear();
-                    itemsToAddDelete.Clear();
-                }
-            }
             reloading = false;
         }
 
@@ -529,7 +567,7 @@ namespace KOTEM.BariVSPackage
 
         private void Reload()
         {
-            if (Environment.HasShutdownStarted || AppDomain.CurrentDomain.IsFinalizingForUnload() || !itemsToReload.Any())
+            if (Environment.HasShutdownStarted || AppDomain.CurrentDomain.IsFinalizingForUnload() || !itemsChanged.Any())
                 return;
 
             if (SolutionInfo.IsBariSolution)
@@ -542,13 +580,12 @@ namespace KOTEM.BariVSPackage
 
                 GetDte().Documents.SaveAll();
 
-                var onlySolution =
-                    itemsToReload.Any(item => item.ToLower().EndsWith(".sln") || item.ToLower().EndsWith(".yaml"));
+                var onlySolution = itemsChanged.Any(item => item.ToLower().EndsWith(".sln"));
 
-                var items = itemsToReload.Where(file => extensions.Contains(Path.GetExtension(file))).Select(project => GetProjectName(project));
+                var items = itemsChanged.Where(file => !file.EndsWith(".yaml") && (extensions.Contains(Path.GetExtension(file)) || projExtensions.Contains(Path.GetExtension(file)))).Select(GetProjectName);
                 items = items.Where(i => i != null).Distinct().ToList();
 
-                var projectItems = items.Select(p => GetProject(p));
+                var projectItems = items.Select(GetProject).ToList();
 
                 onlySolution = onlySolution || (projectItems.Count() > (GetDte().Solution.Projects.Count / 2));
 
@@ -558,22 +595,24 @@ namespace KOTEM.BariVSPackage
                 }
                 else
                 {
-                    SaveDocuments(projectItems.Select(p => p.UniqueName).ToList());
-                    SaveStartupProject();
-
-                    foreach (var item in projectItems)
+                    if (projectItems.Any())
                     {
-                        ReloadProject(SolutionInfo, item);
-                    }
-                    System.Threading.Thread.Sleep(50);
+                        SaveDocuments(projectItems.Select(p => p.UniqueName).ToList());
+                        SaveStartupProject();
 
-                    ReloadDocuments();
-                    ReloadStartupProject();
+                        foreach (var item in projectItems)
+                        {
+                            ReloadProject(SolutionInfo, item);
+                        }
+
+                        System.Threading.Thread.Sleep(50);
+
+                        ReloadDocuments();
+                        ReloadStartupProject();
+                    }
                 }
 
                 reloadNeededAfterDebug = false;
-                itemsToReload.Clear();
-                itemsToAddDelete.Clear();
             }
         }
 
@@ -662,6 +701,11 @@ namespace KOTEM.BariVSPackage
 
         private string GetProjectName(string projectFile)
         {
+            if (projectFile.Contains("{"))//project
+            {
+                return projectFile.Split('{')[0];
+            }
+
             var bariDir = SolutionInfo.BariWorkingDirectory;
             var srcDir = Path.Combine(bariDir, "src");
 
