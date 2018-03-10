@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Forms;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.WindowsAPICodePack.Taskbar;
 using Process = System.Diagnostics.Process;
 
 namespace KOTEM.BariVSPackage.BariExtension
@@ -46,7 +47,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
         }
 
-        
+
         private DTE GetDte()
         {
             return owner.GetDte();
@@ -54,30 +55,25 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void ShowBuildStatus()
         {
-            //var dte = GetDte();
-            //dte.StatusBar.Progress(true, "Building...");
+            object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
+            owner.StatusBar.Animation(1, ref icon);
+            owner.StatusBar.SetText("Build started...");
+            if (TaskbarManager.IsPlatformSupported)
+            {
+                TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Indeterminate);
+            }
 
-            //NEW
-            //var  statusBar = owner.GetService<IVsStatusbar>();
-
-            //object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
-            //statusBar.Animation(5, ref icon);
-
-            //statusBar.SetText("Build started...");
         }
 
         private void HideBuildStatus(bool cancelled)
         {
-            //var dte = GetDte();
-            //dte.StatusBar.Progress(false);
-
-            //NEW
-            //var statusBar = owner.GetService<IVsStatusbar>();
-
-            //object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_General;
-            //statusBar.Animation(0, ref icon);
-
-            //statusBar.SetText("Build succeeded");
+            object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
+            owner.StatusBar.Animation(0, ref icon);
+            owner.StatusBar.SetText("Build completed!");
+            if (TaskbarManager.IsPlatformSupported)
+            {
+                TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.NoProgress);
+            }
         }
 
         public void ExecuteBariBuild()
@@ -88,12 +84,13 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void ExecuteBariBuild(Action<bool> after)
         {
-            ExecuteBariActionAsync("build", after: after);
+            ExecuteBariActionAsync("build", after: after, forceAction: true);
         }
 
         public void ExecuteBariRebuild()
         {
-            ExecuteBariActionAsync("rebuild", after: HideBuildStatus);
+            ShowBuildStatus();
+            ExecuteBariActionAsync("rebuild", after: HideBuildStatus, forceAction: true);
         }
 
         public void ExecuteBariClean()
@@ -202,6 +199,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             if (IsBuildNeeded)
             {
+                ShowBuildStatus();
                 var promptStopDebuggerResult = IsDebugging() ? PromptStopDebugger() : PromptStopDebuggerResult.StopDebuggerAndExecuteAction;
                 switch (promptStopDebuggerResult)
                 {
@@ -213,7 +211,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
                         break;
                 }
-                ExecuteBariActionAsync("build", false, c =>
+                ExecuteBariActionAsync("build", true, c =>
                 {
                     HideBuildStatus(c);
                     after(g);
@@ -225,27 +223,6 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return after(g);
             }
         }
-
-        //public void ExecuteStartWithDebugger()
-        //{
-        //    if (IsBuildNeeded)
-        //    {
-        //        var promptStopDebuggerResult = IsDebugging() ? PromptStopDebugger() : PromptStopDebuggerResult.StopDebuggerAndExecuteAction;
-        //        switch (promptStopDebuggerResult)
-        //        {
-        //            case PromptStopDebuggerResult.Cancel:
-        //                return;
-        //            case PromptStopDebuggerResult.StopDebuggerAndExecuteAction:
-        //                StopDebugger();
-        //                break;
-        //            case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
-        //                break;
-        //        }
-        //        ExecuteBariBuild(c => { StartWithDebugger(c); HideBuildStatus(c); });
-        //        return;
-        //    }
-        //    StartWithDebugger(false);
-        //}
 
         private void ExecuteStartWithoutDebugger(bool cancelled)
         {
@@ -280,41 +257,12 @@ namespace KOTEM.BariVSPackage.BariExtension
             ExecuteStartWithoutDebugger(false);
         }
 
-        //public void StartWithDebugger(bool cancelled)
-        //{
-        //    HideBuildStatus(cancelled);
-
-        //    if (cancelled) return;
-
-        //    new SolutionInfo(GetDte());
-        //    var dte = GetDte();
-        //    if (dte.Debugger.DebuggedProcesses.Count > 0)
-        //    {
-        //        dte.Debugger.Go(false);
-        //        return;
-        //    }
-
-        //    var processId = StartProcess();
-
-        //    AttachDebugger(processId);
-        //}
-
         public void StartWithoutDebugger(bool cancelled)
         {
             HideBuildStatus(cancelled);
 
             if (!cancelled) StartProcess();
         }
-
-        //private void AttachDebugger(int processId)
-        //{
-        //    var dte = GetDte();
-        //    var dteProcess = dte.Debugger.LocalProcesses.OfType<EnvDTE.Process>().FirstOrDefault(p => p.ProcessID == processId);
-        //    if (dteProcess != null)
-        //    {
-        //        dteProcess.Attach();
-        //    }
-        //}
 
         private int StartProcess()
         {

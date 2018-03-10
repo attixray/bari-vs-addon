@@ -62,6 +62,7 @@ namespace KOTEM.BariVSPackage
         private SolutionInfo solutionInfo;
         private bool solutionLoaded;
         private DTE dte;
+        private IVsStatusbar bar;
         private bool startupSet;
         private uint solutionEventsCoockie;
 
@@ -72,6 +73,7 @@ namespace KOTEM.BariVSPackage
         private bool commandRunning;
         private object[] savedStartUp;
         private string activeDocument;
+        private bool checking;
         private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
@@ -108,6 +110,19 @@ namespace KOTEM.BariVSPackage
         {
             get { return solutionWatcher.IsBusy; }
         }
+
+        public IVsStatusbar StatusBar
+        {
+            get
+            {
+                if (bar == null)
+                {
+                    bar = GetService(typeof(SVsStatusbar)) as IVsStatusbar;
+                }
+                return bar;
+            }
+        }
+
         /// <summary>
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that rely on services provided by VisualStudio.
@@ -335,6 +350,8 @@ namespace KOTEM.BariVSPackage
             if (solutionWatcher != null)
             {
                 solutionWatcher.Changed -= SolutionWatcherOnChanged;
+                solutionWatcher.Checking -= SolutionWatcherOnChecking;
+                solutionWatcher.Checked -= SolutionWatcherOnChecked;
                 solutionWatcher.Dispose();
                 solutionWatcher = null;
             }
@@ -356,6 +373,28 @@ namespace KOTEM.BariVSPackage
 
             solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions, projects, IsFileInProject);
             solutionWatcher.Changed += SolutionWatcherOnChanged;
+            solutionWatcher.Checking += SolutionWatcherOnChecking;
+            solutionWatcher.Checked += SolutionWatcherOnChecked;
+        }
+
+        private void SolutionWatcherOnChecked(object sender, EventArgs e)
+        {
+            object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Synch;
+            StatusBar.Animation(0, ref icon);
+            StatusBar.SetText("");
+            checking = false;
+        }
+
+        private void SolutionWatcherOnChecking(object sender, EventArgs e)
+        {
+            if (!checking)
+            {
+                checking = true;
+                object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Synch;
+
+                StatusBar.Animation(1, ref icon);
+                StatusBar.SetText("Checking file changes...");
+            }
         }
 
         private bool IsFileInProject(string fileName)
@@ -760,7 +799,7 @@ namespace KOTEM.BariVSPackage
             return null;
         }
 
-        
+
         public DTE GetDte()
         {
             if (dte == null)

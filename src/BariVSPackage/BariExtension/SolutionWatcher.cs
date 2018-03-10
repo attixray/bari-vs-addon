@@ -7,7 +7,6 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Timers;
 using KOTEM.BariVSPackage.BariExtension.Utils;
 
 namespace KOTEM.BariVSPackage.BariExtension
@@ -64,6 +63,9 @@ namespace KOTEM.BariVSPackage.BariExtension
         public bool IsBusy => IsSuspended;
 
         public event EventHandler<ReloadEventArgs> Changed;
+        public event EventHandler Checking;
+        public event EventHandler Checked;
+
 
         public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension, IEnumerable<string> openedProjects, Predicate<string> isFileOpenedInSln)
         {
@@ -96,6 +98,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 
             Task.Factory.StartNew(() =>
             {
+                Checking?.Invoke(this, EventArgs.Empty);
                 var checkSumss = this.openedProjects.SelectMany(p =>
                                     Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
                                     .Select(f => f.ToLowerInvariant())
@@ -111,6 +114,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 Parallel.ForEach(tasks, (t) => { checkSums.Add(t.Result.Item1, t.Result.Item2); });
 
                 checkSums.Add(YamlPath.ToLowerInvariant(), ComputeChecksum(YamlPath));
+                Checked?.Invoke(this, EventArgs.Empty);
             }, CancellationToken.None, TaskCreationOptions.None, scheduler);
 
             watcher.Changed += FileSystemChanged;
@@ -137,6 +141,9 @@ namespace KOTEM.BariVSPackage.BariExtension
             {
                 changedFiles.Add(e.FullPath);
             }
+
+            Checking?.Invoke(this, EventArgs.Empty);
+
             StartCheck(CancellationToken.None);
         }
 
@@ -219,7 +226,13 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private Task Check(CancellationToken token)
         {
-            return Task.Factory.StartNew(() => { CheckFiles(token); }, token, TaskCreationOptions.None, scheduler);
+            return Task.Factory.StartNew(() =>
+            {
+                CheckFiles(token);
+            }, token, TaskCreationOptions.None, scheduler).ContinueWith((t) =>
+                {
+                    Checked?.Invoke(this, EventArgs.Empty);
+                }, token, TaskContinuationOptions.OnlyOnRanToCompletion, scheduler);
         }
 
         private void CheckFiles(CancellationToken token)
@@ -230,7 +243,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 {
                     return;
                 }
-               // Debug.WriteLine("CheckFiles start");
+                // Debug.WriteLine("CheckFiles start");
                 IList<string> files;
                 lock (changedFiles)
                 {
@@ -324,7 +337,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                             ReBuildNeeded = args.Any(ct => ct.Value == WatcherChangeTypes.Created || (ct.Value & WatcherChangeTypes.Deleted) != 0) || changed.Any(c => c.Key.EndsWith(".yaml"))
                         });
                 }
-               // Debug.WriteLine("CheckFiles end");
+                // Debug.WriteLine("CheckFiles end");
             }
         }
 

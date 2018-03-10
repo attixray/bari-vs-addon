@@ -1,4 +1,5 @@
 ﻿using EnvDTE;
+using Microsoft.VisualStudio.Shell.Interop;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -7,5 +8,6 @@ namespace KOTEM.BariVSPackage.BariExtension
         DTE GetDte();
         T GetService<T>();
         Project GetProject(string name);
+        IVsStatusbar StatusBar { get; }
     }
 }
