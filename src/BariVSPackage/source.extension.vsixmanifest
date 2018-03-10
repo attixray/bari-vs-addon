@@ -1,23 +1,23 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
-  <Metadata>
-    <Identity Id="102d89df-1d64-4843-a75d-3a67bf3763a2" Version="1.6.5" Language="en-US" Publisher="KOTEM" />
-    <DisplayName>Bari VisualStudio Package</DisplayName>
-    <Description xml:space="preserve">Visual Studio addon for bari, an advanced build management tool for .NET projects.
+    <Metadata>
+        <Identity Id="102d89df-1d64-4843-a75d-3a67bf3763a2" Version="1.6.14" Language="en-US" Publisher="KOTEM" />
+        <DisplayName>Bari VisualStudio Package</DisplayName>
+        <Description xml:space="preserve">Visual Studio addon for bari, an advanced build management tool for .NET projects.
     </Description>
-  </Metadata>
-  <Installation InstalledByMsi="false">
-    <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="11.0" />
-    <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="12.0" />
-	<InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="14.0" />
-	<InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="15.0" />
-  </Installation>
-  <Dependencies>
-  </Dependencies>
-  <Prerequisites>
-   <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[15.0.25904.2,16.0]" DisplayName="Visual Studio core editor" />
-  </Prerequisites>
-  <Assets>
-    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
-  </Assets>
+    </Metadata>
+    <Installation InstalledByMsi="false">
+        <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="11.0" />
+        <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="12.0" />
+        <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="14.0" />
+        <InstallationTarget Id="Microsoft.VisualStudio.Pro" Version="15.0" />
+    </Installation>
+    <Dependencies>
+    </Dependencies>
+    <Prerequisites>
+        <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[15.0.25904.2,16.0]" DisplayName="Visual Studio core editor" />
+    </Prerequisites>
+    <Assets>
+        <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+    </Assets>
 </PackageManifest>

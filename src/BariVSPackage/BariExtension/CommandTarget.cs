@@ -19,15 +19,14 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
         }
 
-
-        private readonly IOleCommandTarget baseImpl;
+        private readonly IPackage baseImpl;
         private readonly Commands commands;
         private readonly IVsServiceProvider provider;
 
         public event EventHandler<CommandTargetEventArgs> CommandSent;
 
 
-        public CommandTarget(IOleCommandTarget baseImpl, Commands commands, IVsServiceProvider provider)
+        public CommandTarget(IPackage baseImpl, Commands commands, IVsServiceProvider provider)
         {
             this.baseImpl = baseImpl;
             this.commands = commands;
@@ -67,7 +66,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                     if (commands.IsDebugging())
                     {
-                        return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                        return baseImpl.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
                     }
                     else
                     {
@@ -86,35 +85,39 @@ namespace KOTEM.BariVSPackage.BariExtension
                             if (normalStart > 0)
                             {
                                 normalStart--;
-                                return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                                return baseImpl.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
                             }
-                            else
-                            {
-                                var dte = provider.GetDte();
-                                dte.Documents.SaveAll();
-                                Thread.Sleep(100);
-                                commands.BuildIfNeeded((g) =>
-                                {
-                                    normalStart = 2;
-                                    dte.ExecuteCommand("Debug.Start");
-                                    return VSConstants.S_OK;
 
-                                }, pguidCmdGroup);
-                                return VSConstants.S_OK;
+                            var dte = provider.GetDte();
+                            dte.Documents.SaveAll();
+                            Thread.Sleep(100);
+                            var timeout = 0;
+                            while (baseImpl.IsWatcherBusy && timeout < 300)
+                            {
+                                timeout++;
+                                Thread.Sleep(10);
                             }
+                            commands.BuildIfNeeded((g) =>
+                            {
+                                normalStart = 2;
+                                dte.ExecuteCommand("Debug.Start");
+                                return VSConstants.S_OK;
+
+                            }, pguidCmdGroup);
+                            return VSConstants.S_OK;
                         }
                     }
 
                 }
-                return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+                return baseImpl.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
             }
-            return baseImpl.Exec(pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+            return baseImpl.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
         }
 
         private static int normalStart;
         public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
         {
-            return baseImpl.QueryStatus(pguidCmdGroup, cCmds, prgCmds, pCmdText);
+            return baseImpl.QueryStatus(ref pguidCmdGroup, cCmds, prgCmds, pCmdText);
         }
 
         private static VSConstants.VSStd97CmdID? ToVSStd97CmdID(uint nCmdID)

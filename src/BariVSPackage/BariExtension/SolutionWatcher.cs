@@ -8,11 +8,11 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
-using Timer = System.Timers.Timer;
+using KOTEM.BariVSPackage.BariExtension.Utils;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
-    internal class SolutionWatcher : IDisposable
+    internal class SolutionWatcher : SuspendableBase, IDisposable
     {
         public class ReloadEventArgs : EventArgs
         {
@@ -42,21 +42,26 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
         }
 
+        private readonly object taskLockObject = new object();
+        private CancellationTokenSource tokenSource;
+        private Task pendingTask;
+
         private readonly ChangeCompare changeComparer = new ChangeCompare();
         private readonly Predicate<string> isFileOpenedInSln;
         private readonly IEnumerable<string> openedProjects;
-        private readonly MD5 md5 = MD5.Create();
         private readonly HashSet<string> extensions;
         private readonly HashSet<string> projExtensions;
-        private readonly Semaphore sema = new Semaphore(1, 1);
         private readonly IList<string> changedFiles = new List<string>();
 
-        private IDictionary<string, byte[]> checkSums;
+        private IDictionary<string, byte[]> checkSums = new ConcurrentDictionary<string, byte[]>();
         private FileSystemWatcher watcher;
         private FileSystemWatcher yamlWatcher;
-        private Timer delAddTimer;
+        private STATaskScheduler scheduler;
+        private STATaskScheduler timerScheduler;
+        private STATaskScheduler md5Scheduler;
 
         public string YamlPath { get; }
+        public bool IsBusy => IsSuspended;
 
         public event EventHandler<ReloadEventArgs> Changed;
 
@@ -66,6 +71,9 @@ namespace KOTEM.BariVSPackage.BariExtension
             this.openedProjects = openedProjects.Where(p => projectExtension.Any(p.EndsWith)).Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower()).ToList();
             extensions = new HashSet<string>(extension);
             projExtensions = new HashSet<string>(projectExtension);
+            scheduler = new STATaskScheduler(1);
+            timerScheduler = new STATaskScheduler(Environment.ProcessorCount);
+            md5Scheduler = new STATaskScheduler(Environment.ProcessorCount);
 
             watcher = new FileSystemWatcher(srcDir)
             {
@@ -86,18 +94,25 @@ namespace KOTEM.BariVSPackage.BariExtension
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
             };
 
-
             Task.Factory.StartNew(() =>
             {
-                sema.WaitOne();
-                checkSums = this.openedProjects.AsParallel().SelectMany(p => Directory
-                    .EnumerateFiles(p, "*.*", SearchOption.AllDirectories).AsParallel()
-                    .Where(file => projExtensions.Any(e => file.ToLower().EndsWith(e)) || extensions.Any(e => file.ToLower().EndsWith(e))))
-                    .Distinct().AsParallel().ToDictionary(f => f.ToLowerInvariant(), ComputeChecksum);
+                var checkSumss = this.openedProjects.SelectMany(p =>
+                                    Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
+                                    .Select(f => f.ToLowerInvariant())
+                                    .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith)));
+
+                var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
+                Parallel.ForEach(checkSumss, (t) =>
+                {
+                    var task = Task.Factory.StartNew(() => new Tuple<string, byte[]>(t, ComputeChecksum(t)), CancellationToken.None, TaskCreationOptions.None, md5Scheduler);
+                    tasks.Add(task);
+                });
+
+                Parallel.ForEach(tasks, (t) => { checkSums.Add(t.Result.Item1, t.Result.Item2); });
 
                 checkSums.Add(YamlPath.ToLowerInvariant(), ComputeChecksum(YamlPath));
-                sema.Release();
-            });
+            }, CancellationToken.None, TaskCreationOptions.None, scheduler);
+
             watcher.Changed += FileSystemChanged;
             watcher.Deleted += FileSystemChanged;
             watcher.Created += FileSystemChanged;
@@ -106,9 +121,6 @@ namespace KOTEM.BariVSPackage.BariExtension
             yamlWatcher.Deleted += FileSystemChanged;
             yamlWatcher.Created += FileSystemChanged;
             yamlWatcher.Renamed += FileSystemChanged;
-
-            delAddTimer = new Timer(501);
-            delAddTimer.Elapsed += DeleteTimerOnElapsed;
         }
 
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
@@ -119,14 +131,71 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return;
             }
 
-            Debug.WriteLine("FileSystemChanged {0} - {1}", e.FullPath, e.ChangeType);
+            //Debug.WriteLine("FileSystemChanged {0} - {1}", e.FullPath, e.ChangeType);
 
             lock (changedFiles)
             {
                 changedFiles.Add(e.FullPath);
             }
-            delAddTimer.Stop();
-            delAddTimer.Start();
+            StartCheck(CancellationToken.None);
+        }
+
+        private void StartCheck(CancellationToken token)
+        {
+            lock (taskLockObject)
+            {
+                var previousCts = tokenSource;
+                var previousTask = pendingTask;
+                var newCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                tokenSource = newCts;
+                pendingTask = null;
+
+                pendingTask = Task.Factory.StartNew(state =>
+                {
+                    using (BeginSuspend())
+                    {
+                        var ptuple = state as Tuple<CancellationTokenSource, Task, CancellationToken>;
+                        var pCTS = ptuple.Item1;
+                        var pTask = ptuple.Item2;
+                        var nToken = ptuple.Item3;
+                        if (pCTS != null && pTask != null)
+                        {
+                            // cancel the previous session and wait for its termination
+                            if (!pTask.IsCompleted && !pCTS.IsCancellationRequested)
+                            {
+                                pCTS.Cancel();
+                            }
+
+                            try
+                            {
+                                if (!pTask.IsFaulted)
+                                {
+                                    pTask.Wait(nToken);
+                                }
+                            }
+                            catch (OperationCanceledException)
+                            {
+                            }
+                            finally
+                            {
+                                pCTS.Dispose();
+                            }
+                        }
+
+                        try
+                        {
+                            //Debug.WriteLine("Delay start");
+                            Task.Delay(100, nToken).Wait(nToken);
+                            //Debug.WriteLine("Delay end");
+                            Check(nToken).Wait(nToken);
+                            //Debug.WriteLine("Check end");
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                    }
+                }, new Tuple<CancellationTokenSource, Task, CancellationToken>(previousCts, previousTask, newCts.Token), CancellationToken.None, TaskCreationOptions.HideScheduler, timerScheduler);
+            }
         }
 
         private bool CheckProjects(string e, string ext)
@@ -148,95 +217,123 @@ namespace KOTEM.BariVSPackage.BariExtension
             return string.IsNullOrEmpty(Path.GetExtension(path) ?? string.Empty);
         }
 
-        private void DeleteTimerOnElapsed(object sender, ElapsedEventArgs e)
+        private Task Check(CancellationToken token)
         {
-            delAddTimer.Stop();
-            sema.WaitOne();
-            CheckFiles();
-            sema.Release();
+            return Task.Factory.StartNew(() => { CheckFiles(token); }, token, TaskCreationOptions.None, scheduler);
         }
 
-        private void CheckFiles()
+        private void CheckFiles(CancellationToken token)
         {
-            IList<string> files;
-            lock (changedFiles)
+            using (BeginSuspend())
             {
-                files = changedFiles.Distinct()
-                                    .Select(f => f.ToLowerInvariant())
-                                    .Where(file => IsFolder(file) || projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith) || file.EndsWith(".yaml"))
-                                    .ToList();
-                changedFiles.Clear();
-            }
-
-            var oldCheckSums = files.SelectMany(p => checkSums.AsParallel().Where(f => Path.GetDirectoryName(f.Key).Equals(IsFolder(p) ? p : Path.GetDirectoryName(p)))).ToList().Distinct();
-
-            var currentCheckSums = files.AsParallel().SelectMany(p => Directory
-                .EnumerateFiles(IsFolder(p) ? p : Path.GetDirectoryName(p), "*.*", SearchOption.TopDirectoryOnly)
-                .Where(file => projExtensions.Any(e => file.ToLower().EndsWith(e)) || extensions.Any(e => file.ToLower().EndsWith(e))))
-                .Distinct().AsParallel().ToDictionary(f => f.ToLowerInvariant(), ComputeChecksum);
-
-            var added = new List<KeyValuePair<string, byte[]>>();
-            var deleted = new List<KeyValuePair<string, byte[]>>();
-            foreach (var currentCheckSum in currentCheckSums)
-            {
-                if (!checkSums.ContainsKey(currentCheckSum.Key))
+                if (token.IsCancellationRequested)
                 {
-                    added.Add(currentCheckSum);
+                    return;
                 }
-            }
-
-            foreach (var keyValuePair in oldCheckSums)
-            {
-                if (!currentCheckSums.ContainsKey(keyValuePair.Key))
+               // Debug.WriteLine("CheckFiles start");
+                IList<string> files;
+                lock (changedFiles)
                 {
-                    deleted.Add(keyValuePair);
+                    files = changedFiles.Distinct()
+                        .Select(f => f.ToLowerInvariant())
+                        .Where(f => openedProjects.Any(f.ToLowerInvariant().StartsWith) || f.EndsWith(".yaml"))
+                        .Where(f => IsFolder(f) || projExtensions.Any(f.EndsWith) || extensions.Any(f.EndsWith) || f.EndsWith(".yaml"))
+                        .ToList();
+                    changedFiles.Clear();
+
+                    if (!files.Any())
+                    {
+                        return;
+                    }
                 }
-            }
 
-            var changed = currentCheckSums.Except(oldCheckSums, changeComparer).ToList();
+                var oldCheckSums = files.SelectMany(p => checkSums.AsParallel().Where(f => Path.GetDirectoryName(f.Key).Equals(IsFolder(p) ? p : Path.GetDirectoryName(p)))).ToList().Distinct();
 
-            var args = new Dictionary<string, WatcherChangeTypes>();
+                IDictionary<string, byte[]> currentCheckSums = new ConcurrentDictionary<string, byte[]>();
 
-            foreach (var keyValuePair in added)
-            {
-                checkSums.Add(keyValuePair);
-                if (!isFileOpenedInSln(keyValuePair.Key))
+                var checkSumss = files.SelectMany(p =>
+                    Directory.EnumerateFiles(IsFolder(p) ? p : Path.GetDirectoryName(p), "*.*", SearchOption.TopDirectoryOnly)
+                        .Select(f => f.ToLowerInvariant())
+                        .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith))).Distinct();
+
+                var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
+                Parallel.ForEach(checkSumss, (t) =>
                 {
-                    args.Add(keyValuePair.Key, WatcherChangeTypes.Created);
-                }
-            }
+                    var task = Task.Factory.StartNew(() => new Tuple<string, byte[]>(t, ComputeChecksum(t)), CancellationToken.None, TaskCreationOptions.None, md5Scheduler);
+                    tasks.Add(task);
+                });
 
-            foreach (var keyValuePair in deleted)
-            {
-                checkSums.Remove(keyValuePair.Key);
-                if (isFileOpenedInSln(keyValuePair.Key))
+                Parallel.ForEach(tasks, (t) => { currentCheckSums.Add(t.Result.Item1, t.Result.Item2); });
+
+                var added = new List<KeyValuePair<string, byte[]>>();
+                var deleted = new List<KeyValuePair<string, byte[]>>();
+                foreach (var currentCheckSum in currentCheckSums.Where(v => extensions.Any(v.Key.EndsWith) || v.Key.EndsWith(".yaml")))
                 {
-                    args.Add(keyValuePair.Key, WatcherChangeTypes.Deleted);
+                    if (!checkSums.ContainsKey(currentCheckSum.Key))
+                    {
+                        added.Add(currentCheckSum);
+                    }
                 }
-                else
+
+                foreach (var keyValuePair in oldCheckSums.Where(v => extensions.Any(v.Key.EndsWith) || v.Key.EndsWith(".yaml")))
                 {
-                    args.Add(keyValuePair.Key, WatcherChangeTypes.Changed);
+                    if (!currentCheckSums.ContainsKey(keyValuePair.Key))
+                    {
+                        deleted.Add(keyValuePair);
+                    }
                 }
-            }
 
-            foreach (var keyValuePair in changed)
-            {
-                checkSums[keyValuePair.Key] = keyValuePair.Value;
-                args[keyValuePair.Key] = WatcherChangeTypes.Changed;
-            }
+                var changed = currentCheckSums.Except(oldCheckSums, changeComparer)
+                    .Concat(files.Where(f => projExtensions.Any(f.EndsWith)).Select(f => new KeyValuePair<string, byte[]>(f, new byte[] { }))).ToList();
 
-            if (args.Any())
-            {
-                Changed?.Invoke(this, new ReloadEventArgs(args) { ReBuildNeeded = args.Any(ct=> ct.Value == WatcherChangeTypes.Created || (ct.Value & WatcherChangeTypes.Deleted) != 0)|| changed.Any(c => c.Key.EndsWith(".yaml")) });
+                var args = new Dictionary<string, WatcherChangeTypes>();
+
+                foreach (var keyValuePair in added)
+                {
+                    checkSums.Add(keyValuePair);
+                    if (!isFileOpenedInSln(keyValuePair.Key))
+                    {
+                        args.Add(keyValuePair.Key, WatcherChangeTypes.Created);
+                    }
+                }
+
+                foreach (var keyValuePair in deleted)
+                {
+                    checkSums.Remove(keyValuePair.Key);
+                    if (isFileOpenedInSln(keyValuePair.Key))
+                    {
+                        args.Add(keyValuePair.Key, WatcherChangeTypes.Deleted);
+                    }
+                    else
+                    {
+                        args.Add(keyValuePair.Key, WatcherChangeTypes.Changed);
+                    }
+                }
+
+                foreach (var keyValuePair in changed)
+                {
+                    checkSums[keyValuePair.Key] = keyValuePair.Value;
+                    args[keyValuePair.Key] = WatcherChangeTypes.Changed;
+                }
+
+                if (args.Any())
+                {
+                    Changed?.Invoke(this,
+                        new ReloadEventArgs(args)
+                        {
+                            ReBuildNeeded = args.Any(ct => ct.Value == WatcherChangeTypes.Created || (ct.Value & WatcherChangeTypes.Deleted) != 0) || changed.Any(c => c.Key.EndsWith(".yaml"))
+                        });
+                }
+               // Debug.WriteLine("CheckFiles end");
             }
         }
 
         private byte[] ComputeChecksum(string path)
         {
-            using (var stream = File.OpenRead(path))
+            using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             using (var bufferedStream = new BufferedStream(stream, 1048576))
             {
-                return md5.ComputeHash(bufferedStream);
+                return new MD5CryptoServiceProvider().ComputeHash(bufferedStream);
             }
         }
 
@@ -258,12 +355,24 @@ namespace KOTEM.BariVSPackage.BariExtension
                     yamlWatcher = null;
                 }
 
-                if (delAddTimer != null)
+                scheduler?.Dispose();
+                timerScheduler?.Dispose();
+                md5Scheduler?.Dispose();
+
+                if (tokenSource != null)
                 {
-                    delAddTimer.Stop();
-                    delAddTimer.Elapsed -= DeleteTimerOnElapsed;
-                    delAddTimer.Dispose();
-                    delAddTimer = null;
+                    if (!tokenSource.IsCancellationRequested)
+                    {
+                        tokenSource.Cancel();
+                    }
+                    if (pendingTask != null && !pendingTask.IsCompleted)
+                    {
+                        pendingTask.Wait();
+                    }
+                    if (pendingTask != null)
+                    {
+                        pendingTask.Dispose();
+                    }
                 }
             }
         }
