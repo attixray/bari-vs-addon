@@ -68,24 +68,41 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="envdte100, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <EmbedInteropTypes>True</EmbedInteropTypes>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.VisualStudio.OLE.Interop" />
-    <Reference Include="Microsoft.VisualStudio.Shell.12.0, Version=12.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL" />
-    <Reference Include="Microsoft.VisualStudio.Shell.Framework, Version=15.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />
+    <Reference Include="Microsoft.VisualStudio.Shell.15.0, Version=15.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Framework, Version=15.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL" />
     <Reference Include="Microsoft.VisualStudio.Shell.Interop" />
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop.12.0, Version=12.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop.15.0.DesignTime, Version=15.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop.15.1.DesignTime, Version=15.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop.15.3.DesignTime, Version=15.3.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop.15.5.DesignTime, Version=15.5.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
     <Reference Include="Microsoft.VisualStudio.Shell.Interop.8.0" />
     <Reference Include="Microsoft.VisualStudio.Shell.Interop.9.0" />
     <Reference Include="Microsoft.VisualStudio.Shell.Interop.10.0" />
     <Reference Include="Microsoft.VisualStudio.Shell.Interop.11.0">
-      <EmbedInteropTypes>true</EmbedInteropTypes>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
     </Reference>
     <Reference Include="Microsoft.VisualStudio.TextManager.Interop" />
     <Reference Include="Microsoft.VisualStudio.Shell.Immutable.10.0" />
     <Reference Include="Microsoft.VisualStudio.Shell.Immutable.11.0" />
     <Reference Include="Microsoft.VisualStudio.VCProjectEngine, Version=15.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-      <EmbedInteropTypes>True</EmbedInteropTypes>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -116,15 +133,6 @@
       <Isolated>False</Isolated>
       <EmbedInteropTypes>False</EmbedInteropTypes>
     </COMReference>
-    <COMReference Include="EnvDTE90">
-      <Guid>{2CE2370E-D744-4936-A090-3FFFE667B0E1}</Guid>
-      <VersionMajor>9</VersionMajor>
-      <VersionMinor>0</VersionMinor>
-      <Lcid>0</Lcid>
-      <WrapperTool>primary</WrapperTool>
-      <Isolated>False</Isolated>
-      <EmbedInteropTypes>False</EmbedInteropTypes>
-    </COMReference>
     <COMReference Include="Microsoft.VisualStudio.CommandBars">
       <Guid>{1CBA492E-7263-47BB-87FE-639000619B15}</Guid>
       <VersionMajor>8</VersionMajor>
@@ -133,6 +141,7 @@
       <WrapperTool>primary</WrapperTool>
       <Isolated>False</Isolated>
       <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>True</Private>
     </COMReference>
     <COMReference Include="stdole">
       <Guid>{00020430-0000-0000-C000-000000000046}</Guid>
@@ -150,8 +159,9 @@
     <Compile Include="BariExtension\BariSolutionConfig.cs" />
     <Compile Include="BariExtension\Commands.cs" />
     <Compile Include="BariExtension\CommandTarget.cs" />
+    <Compile Include="BariExtension\IPackage.cs" />
     <Compile Include="BariExtension\IVsServiceProvider.cs" />
-    <Compile Include="BariExtension\KeyboardHook.cs" />
+    <Compile Include="BariExtension\Utils\KeyboardHook.cs" />
     <Compile Include="BariExtension\Option\BariOptionsDialog.cs">
       <SubType>Component</SubType>
     </Compile>
@@ -169,6 +179,9 @@
     <Compile Include="BariExtension\SolutionWatcher.cs" />
     <Compile Include="BariExtension\StartAction.cs" />
     <Compile Include="BariExtension\StartParameters.cs" />
+    <Compile Include="BariExtension\Utils\SimpleStateHolder.cs" />
+    <Compile Include="BariExtension\Utils\STATaskScheduler.cs" />
+    <Compile Include="BariExtension\Utils\SuspendableBase.cs" />
     <Compile Include="BariExtension\Wrappers\VsOutputWindowPaneWrapper.cs" />
     <Compile Include="BariExtension\Wrappers\VsOutputWindowWrapper.cs" />
     <Compile Include="BariExtension\Wrappers\WrapperFactory.cs" />
