@@ -44,13 +44,10 @@ namespace KOTEM.BariVSPackage.BariExtension
             get { return running; }
         }
 
-        public int Execute(string actionName, bool forceAction, Func<bool, int> after = null)
+        public void Execute(string actionName, bool forceAction, Action<bool, bool> after = null)
         {
             running = true;
-            if (CommandStarted != null)
-            {
-                CommandStarted(this, new BariCommandArgs(actionName));
-            }
+            CommandStarted?.Invoke(this, new BariCommandArgs(actionName));
             try
             {
                 var arguments = string.Format("{0} --target {1} {2} {3} {4}",
@@ -107,17 +104,13 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                 if (after != null && (forceAction || proc.ExitCode == 0))
                 {
-                    return after(cancelled);
+                    after(cancelled, proc.ExitCode == 0);
                 }
-                return 0;
             }
             finally
             {
                 running = false;
-                if (CommandFinished != null)
-                {
-                    CommandFinished(this, new BariCommandArgs(actionName));
-                }
+                CommandFinished?.Invoke(this, new BariCommandArgs(actionName));
             }
         }
 
@@ -149,10 +142,10 @@ namespace KOTEM.BariVSPackage.BariExtension
             bariOutputPane.WriteLine(string.Format("{0}", data));
         }
 
-        public void ExecuteAsync(string actionName, Action<bool> after, bool forceAction)
+        public void ExecuteAsync(string actionName, Action<bool, bool> after, bool forceAction)
         {
             isCancellationRequested = false;
-            Task.Factory.StartNew(() => Execute(actionName, forceAction, (f) => { after(f); return 0; }));
+            Task.Factory.StartNew(() => Execute(actionName, forceAction, after));
         }
 
         public void CancelAll()

@@ -65,11 +65,18 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         }
 
-        private void HideBuildStatus(bool cancelled)
+        private void HideBuildStatus(bool cancelled, bool completed)
         {
             object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
             owner.StatusBar.Animation(0, ref icon);
-            owner.StatusBar.SetText("Build completed!");
+            if (completed)
+            {
+                owner.StatusBar.SetText("Build completed!");
+            }
+            else
+            {
+                owner.StatusBar.SetText("Build failed!");
+            }
             if (TaskbarManager.IsPlatformSupported)
             {
                 TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.NoProgress);
@@ -82,7 +89,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             ExecuteBariBuild(HideBuildStatus);
         }
 
-        private void ExecuteBariBuild(Action<bool> after)
+        private void ExecuteBariBuild(Action<bool, bool> after)
         {
             ExecuteBariActionAsync("build", after: after, forceAction: true);
         }
@@ -98,7 +105,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             ExecuteBariActionAsync("clean");
         }
 
-        private void ExecuteBariActionAsync(string actionName, bool forceAction = false, Action<bool> after = null)
+        private void ExecuteBariActionAsync(string actionName, bool forceAction = false, Action<bool, bool> after = null)
         {
             CancelAnyPreviousBariAction();
 
@@ -106,7 +113,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             GetDte().ExecuteCommand("View.Output");
             bariOutputPane.WriteLine(string.Format("Executing bari {0}...\n", actionName));
 
-            bariShell.ExecuteAsync(actionName, cancelled =>
+            bariShell.ExecuteAsync(actionName, (cancelled, completed) =>
             {
                 CancelAnyPreviousBariAction();
                 if (!cancelled)
@@ -115,12 +122,12 @@ namespace KOTEM.BariVSPackage.BariExtension
                 }
                 if (after != null)
                 {
-                    after(cancelled);
+                    after(cancelled, completed);
                 }
             }, forceAction);
         }
 
-        private int ExecuteBariAction(string actionName, bool forceAction = false, Func<bool, int> after = null)
+        private void ExecuteBariAction(string actionName, bool forceAction = false, Action<bool, bool> after = null)
         {
             CancelAnyPreviousBariAction();
 
@@ -128,17 +135,14 @@ namespace KOTEM.BariVSPackage.BariExtension
             GetDte().ExecuteCommand("View.Output");
             bariOutputPane.WriteLine(string.Format("Executing bari {0}...\n", actionName));
 
-            return bariShell.Execute(actionName, forceAction, cancelled =>
+            bariShell.Execute(actionName, forceAction, (cancelled, completed) =>
             {
                 if (!cancelled)
                 {
                     isBuildNeeded = false;
                 }
-                if (after != null)
-                {
-                    return after(cancelled);
-                }
-                return 0;
+
+                after?.Invoke(cancelled, completed);
             });
         }
 
@@ -211,10 +215,13 @@ namespace KOTEM.BariVSPackage.BariExtension
                     case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
                         break;
                 }
-                ExecuteBariActionAsync("build", true, c =>
+                ExecuteBariActionAsync("build", true, (ca, co) =>
                 {
-                    HideBuildStatus(c);
-                    after(g);
+                    HideBuildStatus(ca, co);
+                    if (co)
+                    {
+                        after(g);
+                    }
                 });
                 return 0;
             }
@@ -239,10 +246,10 @@ namespace KOTEM.BariVSPackage.BariExtension
                     case PromptStopDebuggerResult.KeepDebuggingAndExecuteAction:
                         break;
                 }
-                ExecuteBariBuild(c => { StartWithoutDebugger(c); HideBuildStatus(c); });
+                ExecuteBariBuild((ca, co) => { StartWithoutDebugger(ca, co); HideBuildStatus(ca, co); });
                 return;
             }
-            StartWithoutDebugger(false);
+            StartWithoutDebugger(false, true);
         }
 
         private PromptStopDebuggerResult PromptStopDebugger()
@@ -257,11 +264,11 @@ namespace KOTEM.BariVSPackage.BariExtension
             ExecuteStartWithoutDebugger(false);
         }
 
-        public void StartWithoutDebugger(bool cancelled)
+        public void StartWithoutDebugger(bool cancelled, bool completed)
         {
-            HideBuildStatus(cancelled);
+            HideBuildStatus(cancelled, completed);
 
-            if (!cancelled) StartProcess();
+            if (!cancelled && completed) StartProcess();
         }
 
         private int StartProcess()
