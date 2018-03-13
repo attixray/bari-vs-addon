@@ -74,6 +74,7 @@ namespace KOTEM.BariVSPackage
         private object[] savedStartUp;
         private string activeDocument;
         private bool checking;
+        private int checkNumber;
         private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
@@ -381,7 +382,7 @@ namespace KOTEM.BariVSPackage
         {
             object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Synch;
             StatusBar.Animation(0, ref icon);
-            StatusBar.SetText("");
+            StatusBar.SetText(checkNumber > 1 ? "File changes checked." : "Checksums created.");
             checking = false;
         }
 
@@ -393,7 +394,8 @@ namespace KOTEM.BariVSPackage
                 object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Synch;
 
                 StatusBar.Animation(1, ref icon);
-                StatusBar.SetText("Checking file changes...");
+                StatusBar.SetText(checkNumber > 0 ? "Checking file changes..." : "Creating checksums...");
+                checkNumber++;
             }
         }
 
