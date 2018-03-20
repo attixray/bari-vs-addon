@@ -174,6 +174,8 @@ namespace KOTEM.BariVSPackage
                     Reload();
                 }
             }
+
+            changeType = ChangeTypeEnum.OnlyBuild;
             itemsChangedDuringCommand.Clear();
             itemsChanged.Clear();
             commandRunning = false;

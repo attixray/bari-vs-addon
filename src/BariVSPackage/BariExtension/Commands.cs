@@ -116,10 +116,16 @@ namespace KOTEM.BariVSPackage.BariExtension
             bariShell.ExecuteAsync(actionName, (cancelled, completed) =>
             {
                 CancelAnyPreviousBariAction();
-                if (!cancelled)
+                if (!cancelled && completed)
                 {
                     isBuildNeeded = false;
                 }
+
+                if (!completed)
+                {
+                    isBuildNeeded = true;
+                }
+
                 if (after != null)
                 {
                     after(cancelled, completed);
