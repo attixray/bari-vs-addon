@@ -13,6 +13,11 @@ using KOTEM.BariVSPackage.BariExtension;
 using System.Windows.Forms;
 using System.IO;
 using EnvDTE;
+using log4net;
+using log4net.Appender;
+using log4net.Core;
+using log4net.Layout;
+using log4net.Repository.Hierarchy;
 using Commands = KOTEM.BariVSPackage.BariExtension.Commands;
 using Timer = System.Timers.Timer;
 
@@ -48,6 +53,8 @@ namespace KOTEM.BariVSPackage
             YamlChange,
             FileAddOrDelete,
         }
+
+        private readonly ILog log = LogManager.GetLogger(typeof(BariVsPackagePackage));
 
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
@@ -130,6 +137,8 @@ namespace KOTEM.BariVSPackage
         /// </summary>
         protected override void Initialize()
         {
+            InitLogging();
+
             Debug.WriteLine("Entering Initialize() of: {0}", this);
 
             var vsSolution = GetService(typeof(SVsSolution)) as IVsSolution;
@@ -139,6 +148,30 @@ namespace KOTEM.BariVSPackage
             }
 
             base.Initialize();
+        }
+
+        private static void InitLogging()
+        {
+            var hierarchy = (Hierarchy)LogManager.GetRepository();
+
+            var patternLayout = new PatternLayout();
+            patternLayout.ConversionPattern = "%date [%thread] %-5level %logger - %message%newline";
+            patternLayout.ActivateOptions();
+
+            var roller = new RollingFileAppender();
+            roller.AppendToFile = false;
+            roller.File = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Bari", "Logs", "bari-log.txt");
+            roller.Layout = patternLayout;
+            roller.MaxSizeRollBackups = 5;
+            roller.MaximumFileSize = "10MB";
+            roller.RollingStyle = RollingFileAppender.RollingMode.Size;
+            roller.StaticLogFileName = true;
+            roller.ActivateOptions();
+            hierarchy.Root.AddAppender(roller);
+
+            hierarchy.Root.Level = Properties.Settings.Default.Logging ? Level.Debug : Level.Off;
+            hierarchy.RaiseConfigurationChanged(EventArgs.Empty);
+            hierarchy.Configured = true;
         }
 
         private void target_CommandSent(object sender, CommandTarget.CommandTargetEventArgs e)

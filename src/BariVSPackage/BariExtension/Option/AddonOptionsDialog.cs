@@ -52,6 +52,14 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
             set { Properties.Settings.Default.SoftClean = value; }
         }
 
+        [Category("Misc")]
+        [Description("Logging option")]
+        public bool Logging
+        {
+            get { return Properties.Settings.Default.Logging; }
+            set { Properties.Settings.Default.Logging = value; }
+        }
+
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();

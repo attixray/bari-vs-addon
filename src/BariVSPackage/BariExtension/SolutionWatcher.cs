@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using KOTEM.BariVSPackage.BariExtension.Utils;
+using log4net;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -40,6 +41,8 @@ namespace KOTEM.BariVSPackage.BariExtension
                 return 0;
             }
         }
+
+        private readonly ILog log = LogManager.GetLogger(typeof(SolutionWatcher));
 
         private readonly object taskLockObject = new object();
         private CancellationTokenSource tokenSource;
@@ -76,6 +79,13 @@ namespace KOTEM.BariVSPackage.BariExtension
             scheduler = new STATaskScheduler(1);
             timerScheduler = new STATaskScheduler(Environment.ProcessorCount);
             md5Scheduler = new STATaskScheduler(Environment.ProcessorCount);
+
+            log.Info("SolutionWatcher initialized.");
+            log.Debug("Projects in solution: ");
+            foreach (var openedProject in this.openedProjects)
+            {
+                log.Debug(openedProject);
+            }
 
             watcher = new FileSystemWatcher(srcDir)
             {
@@ -132,11 +142,13 @@ namespace KOTEM.BariVSPackage.BariExtension
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
             if (CheckProjects(e.FullPath.ToLower(), ext))
             {
+                log.Debug($"File NOT in project: {e.FullPath}");
                 return;
             }
 
             //Debug.WriteLine("FileSystemChanged {0} - {1}", e.FullPath, e.ChangeType);
 
+            log.Debug($"File changed: {e.FullPath}");
             lock (changedFiles)
             {
                 changedFiles.Add(e.FullPath);
@@ -331,13 +343,16 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                 if (args.Any())
                 {
-                    Changed?.Invoke(this,
-                        new ReloadEventArgs(args)
-                        {
-                            ReBuildNeeded = args.Any(ct => ct.Value == WatcherChangeTypes.Created || (ct.Value & WatcherChangeTypes.Deleted) != 0) || changed.Any(c => c.Key.EndsWith(".yaml"))
-                        });
+                    log.Debug("Changed event: ");
+                    foreach (var watcherChangeTypese in args)
+                    {
+                        log.Debug($"{watcherChangeTypese.Key} - {watcherChangeTypese.Value}");
+                    }
+                    Changed?.Invoke(this, new ReloadEventArgs(args)
+                    {
+                        ReBuildNeeded = args.Any(ct => ct.Value == WatcherChangeTypes.Created || (ct.Value & WatcherChangeTypes.Deleted) != 0) || changed.Any(c => c.Key.EndsWith(".yaml"))
+                    });
                 }
-                // Debug.WriteLine("CheckFiles end");
             }
         }
 
@@ -367,7 +382,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     yamlWatcher.Dispose();
                     yamlWatcher = null;
                 }
-               
+
                 if (tokenSource != null)
                 {
                     if (!tokenSource.IsCancellationRequested)
