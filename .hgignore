@@ -10,3 +10,5 @@ relre:^src/.*\.user$
 *.orig
 *.rej
 *.patch
+src/packages/
+src/.vs/
