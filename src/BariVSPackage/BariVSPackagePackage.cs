@@ -857,12 +857,6 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionLoadEvents.OnBeforeOpenSolution(string pszSolutionFilename)
         {
-            if (!solutionLoaded && solutionInfo == null)
-            {
-                solutionLoaded = true;
-                AttachPluginToSolution(pszSolutionFilename);
-            }
-
             return VSConstants.S_OK;
         }
 

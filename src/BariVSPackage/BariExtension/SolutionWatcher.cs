@@ -367,11 +367,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     yamlWatcher.Dispose();
                     yamlWatcher = null;
                 }
-
-                scheduler?.Dispose();
-                timerScheduler?.Dispose();
-                md5Scheduler?.Dispose();
-
+               
                 if (tokenSource != null)
                 {
                     if (!tokenSource.IsCancellationRequested)
@@ -387,6 +383,10 @@ namespace KOTEM.BariVSPackage.BariExtension
                         pendingTask.Dispose();
                     }
                 }
+
+                scheduler?.Dispose();
+                timerScheduler?.Dispose();
+                md5Scheduler?.Dispose();
             }
         }
 
