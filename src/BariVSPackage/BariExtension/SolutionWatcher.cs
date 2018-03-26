@@ -50,7 +50,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private readonly ChangeCompare changeComparer = new ChangeCompare();
         private readonly Predicate<string> isFileOpenedInSln;
-        private readonly IEnumerable<string> openedProjects;
+        private readonly IList<string> openedProjects;
         private readonly HashSet<string> extensions;
         private readonly HashSet<string> projExtensions;
         private readonly IList<string> changedFiles = new List<string>();
@@ -73,20 +73,15 @@ namespace KOTEM.BariVSPackage.BariExtension
         public SolutionWatcher(string srcDir, IEnumerable<string> extension, IEnumerable<string> projectExtension, IEnumerable<string> openedProjects, Predicate<string> isFileOpenedInSln)
         {
             this.isFileOpenedInSln = isFileOpenedInSln;
-            this.openedProjects = openedProjects.Where(p => projectExtension.Any(p.EndsWith)).Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower()).ToList();
             extensions = new HashSet<string>(extension);
             projExtensions = new HashSet<string>(projectExtension);
             scheduler = new STATaskScheduler(1);
             timerScheduler = new STATaskScheduler(Environment.ProcessorCount);
             md5Scheduler = new STATaskScheduler(Environment.ProcessorCount);
+            this.openedProjects = new List<string>();
 
             log.Info("SolutionWatcher initialized.");
-            log.Debug("Projects in solution: ");
-            foreach (var openedProject in this.openedProjects)
-            {
-                log.Debug(openedProject);
-            }
-
+            
             watcher = new FileSystemWatcher(srcDir)
             {
                 EnableRaisingEvents = true,
@@ -106,25 +101,10 @@ namespace KOTEM.BariVSPackage.BariExtension
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
             };
 
+            InitCheckSums(openedProjects);
             Task.Factory.StartNew(() =>
             {
-                Checking?.Invoke(this, EventArgs.Empty);
-                var checkSumss = this.openedProjects.SelectMany(p =>
-                                    Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
-                                    .Select(f => f.ToLowerInvariant())
-                                    .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith)));
-
-                var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
-                Parallel.ForEach(checkSumss, (t) =>
-                {
-                    var task = Task.Factory.StartNew(() => new Tuple<string, byte[]>(t, ComputeChecksum(t)), CancellationToken.None, TaskCreationOptions.None, md5Scheduler);
-                    tasks.Add(task);
-                });
-
-                Parallel.ForEach(tasks, (t) => { checkSums.Add(t.Result.Item1, t.Result.Item2); });
-
                 checkSums.Add(YamlPath.ToLowerInvariant(), ComputeChecksum(YamlPath));
-                Checked?.Invoke(this, EventArgs.Empty);
             }, CancellationToken.None, TaskCreationOptions.None, scheduler);
 
             watcher.Changed += FileSystemChanged;
@@ -135,6 +115,48 @@ namespace KOTEM.BariVSPackage.BariExtension
             yamlWatcher.Deleted += FileSystemChanged;
             yamlWatcher.Created += FileSystemChanged;
             yamlWatcher.Renamed += FileSystemChanged;
+        }
+
+        private void InitCheckSums(IEnumerable<string> projects)
+        {
+            var currentProjects = projects.Where(p => projExtensions.Any(p.EndsWith)).Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower()).ToList();
+            if (currentProjects.Any())
+            {
+                Task.Factory.StartNew(() =>
+                {
+                    Checking?.Invoke(this, EventArgs.Empty);
+                    var checkSumss = currentProjects.Except(openedProjects).SelectMany(p =>
+                        Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
+                            .Select(f => f.ToLowerInvariant())
+                            .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith)));
+
+                    var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
+                    Parallel.ForEach(checkSumss, (t) =>
+                    {
+                        var task = Task.Factory.StartNew(() => new Tuple<string, byte[]>(t, ComputeChecksum(t)), CancellationToken.None, TaskCreationOptions.None, md5Scheduler);
+                        tasks.Add(task);
+                    });
+
+                    Parallel.ForEach(tasks, (t) =>
+                    {
+                        if (!checkSums.ContainsKey(t.Result.Item1))
+                        {
+                            checkSums.Add(t.Result.Item1, t.Result.Item2);
+                        }
+                    });
+
+                    foreach (var currentProject in currentProjects)
+                    {
+                        if (!openedProjects.Contains(currentProject))
+                        {
+                            log.Debug($"Project added to SolutionWatcher: {currentProject}");
+                            openedProjects.Add(currentProject);
+                        }
+                    }
+
+                    Checked?.Invoke(this, EventArgs.Empty);
+                }, CancellationToken.None, TaskCreationOptions.None, scheduler);
+            }
         }
 
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
@@ -405,6 +427,11 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
         }
 
+        public void AddProject(IEnumerable<string> openedProjects)
+        {
+            InitCheckSums(openedProjects);
+        }
+      
         public void Dispose()
         {
             Dispose(true);
