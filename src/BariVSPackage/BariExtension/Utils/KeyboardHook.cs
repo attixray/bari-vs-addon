@@ -11,6 +11,8 @@ namespace KOTEM.BariVSPackage.BariExtension
         private HookProc keyboardHookProcedure;
         private readonly IntPtr hHook;
 
+        public bool IsEnabled { get; set; }
+
         public KeyboardHook(Action<Keys> handleKeyPressed)
         {
             this.handleKeyPressed = handleKeyPressed;
@@ -19,7 +21,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 
 #pragma warning disable 612,618
             hHook = SetWindowsHookEx(WH_KEYBOARD, keyboardHookProcedure, IntPtr.Zero,
-                                     (uint) AppDomain.GetCurrentThreadId());
+                                     (uint)AppDomain.GetCurrentThreadId());
 #pragma warning restore 612,618
             if (hHook == IntPtr.Zero)
             {
@@ -29,7 +31,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         }
 
         private delegate int HookProc(int code, IntPtr wParam, IntPtr lParam);
-        
+
         [DllImport("user32.dll", EntryPoint = "SetWindowsHookEx", SetLastError = true)]
         private static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
 
@@ -41,11 +43,15 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         public int KeyboardHookProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            var keyCode = wParam.ToInt32();
-            if (typeof (Keys).IsEnumDefined(keyCode))
+            if (IsEnabled)
             {
-                handleKeyPressed((Keys) keyCode);
+                var keyCode = wParam.ToInt32();
+                if (typeof(Keys).IsEnumDefined(keyCode))
+                {
+                    handleKeyPressed((Keys)keyCode);
+                }
             }
+
             return CallNextHookEx(hHook, nCode, wParam, lParam);
         }
 

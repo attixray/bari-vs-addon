@@ -18,10 +18,10 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private HookProc messageHookProcedure;
         private IntPtr hHook;
-        
+
         private const int WM_INITDIALOG = 0x0110;
         private const int WH_CALLWNDPROCRET = 12;
-        
+
         private delegate int HookProc(int code, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll", EntryPoint = "SetWindowsHookEx", SetLastError = true)]
@@ -43,7 +43,9 @@ namespace KOTEM.BariVSPackage.BariExtension
         static extern bool DestroyWindow(IntPtr hwnd);
 
         [DllImport("user32.dll", SetLastError = true)]
-        static extern bool CloseWindow(IntPtr hWnd);
+        private static extern bool CloseWindow(IntPtr hWnd);
+
+        public bool IsEnabled { get; set; }
 
         public ReloadDialogKiller()
         {
@@ -56,18 +58,21 @@ namespace KOTEM.BariVSPackage.BariExtension
             if (nCode < 0)
                 return CallNextHookEx(hHook, nCode, wParam, lParam);
 
-            var msg = (CWPRETSTRUCT)Marshal.PtrToStructure(lParam, typeof(CWPRETSTRUCT));
-
-            if (msg.message == WM_INITDIALOG)
+            if (IsEnabled)
             {
-                int nLength = GetWindowTextLength(msg.hwnd);
-                var dialogName = new StringBuilder(nLength);
-                GetWindowText(msg.hwnd, dialogName, dialogName.Capacity);
-                var name = dialogName.ToString().ToLower();
-                if (name.StartsWith("file modification") || name.StartsWith("conflicting file modification"))
+                var msg = (CWPRETSTRUCT)Marshal.PtrToStructure(lParam, typeof(CWPRETSTRUCT));
+
+                if (msg.message == WM_INITDIALOG)
                 {
-                    DestroyWindow(msg.hwnd);
-                    CloseWindow(msg.hwnd);
+                    int nLength = GetWindowTextLength(msg.hwnd);
+                    var dialogName = new StringBuilder(nLength);
+                    GetWindowText(msg.hwnd, dialogName, dialogName.Capacity);
+                    var name = dialogName.ToString().ToLower();
+                    if (name.StartsWith("file modification") || name.StartsWith("conflicting file modification"))
+                    {
+                        DestroyWindow(msg.hwnd);
+                        CloseWindow(msg.hwnd);
+                    }
                 }
             }
 

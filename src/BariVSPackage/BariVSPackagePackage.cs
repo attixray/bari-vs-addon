@@ -147,6 +147,9 @@ namespace KOTEM.BariVSPackage
                 vsSolution.AdviseSolutionEvents(this, out solutionEventsCoockie);
             }
 
+            RegisterKeyboardHook();
+            RegisterDialogKiller();
+
             base.Initialize();
         }
 
@@ -247,11 +250,27 @@ namespace KOTEM.BariVSPackage
             if (SolutionInfo.IsBariSolution && solutionDir != null)
             {
                 UnRegisterPriorityCommandTarget();
-                UnRegisterKeyboardHook();
                 UnRegisterFileSystemWatcher();
-                UnRegisterDialogKiller();
                 UnRegisterReloadTimer();
                 DetachPluginFromSolution();
+                SetDialogKiller(false);
+                SetKeyboardHook(false);
+            }
+        }
+
+        private void SetKeyboardHook(bool b)
+        {
+            if (keyboardHook != null)
+            {
+                keyboardHook.IsEnabled = b;
+            }
+        }
+
+        private void SetDialogKiller(bool b)
+        {
+            if (dialogKiller != null)
+            {
+                dialogKiller.IsEnabled = b;
             }
         }
 
@@ -1031,10 +1050,10 @@ namespace KOTEM.BariVSPackage
                     target.CommandSent += target_CommandSent;
 
                     RegisterPriorityCommandTarget();
-                    RegisterKeyboardHook();
                     RegisterReloadTimer();
-                    RegisterDialogKiller();
                     RegisterFileSystemWatcher();
+                    SetDialogKiller(true);
+                    SetKeyboardHook(true);
 
                     GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
                     GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
