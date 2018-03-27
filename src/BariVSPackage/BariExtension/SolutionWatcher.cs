@@ -61,6 +61,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         private STATaskScheduler scheduler;
         private STATaskScheduler timerScheduler;
         private STATaskScheduler md5Scheduler;
+        //private ConcurrentQueue<MD5CryptoServiceProvider> md5Providers = new ConcurrentQueue<MD5CryptoServiceProvider>();
 
         public string YamlPath { get; }
         public bool IsBusy => IsSuspended;
@@ -79,9 +80,12 @@ namespace KOTEM.BariVSPackage.BariExtension
             timerScheduler = new STATaskScheduler(Environment.ProcessorCount);
             md5Scheduler = new STATaskScheduler(Environment.ProcessorCount);
             this.openedProjects = new List<string>();
-
+            //for (var i = 0; i < md5Scheduler.MaximumConcurrencyLevel+15; i++)
+            //{
+            //    md5Providers.Enqueue(new MD5CryptoServiceProvider());
+            //}
             log.Info("SolutionWatcher initialized.");
-            
+
             watcher = new FileSystemWatcher(srcDir)
             {
                 EnableRaisingEvents = true,
@@ -139,6 +143,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                     Parallel.ForEach(tasks, (t) =>
                     {
+                        //t.Wait();
                         if (!checkSums.ContainsKey(t.Result.Item1))
                         {
                             checkSums.Add(t.Result.Item1, t.Result.Item2);
@@ -226,7 +231,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                         try
                         {
                             //Debug.WriteLine("Delay start");
-                            Task.Delay(100, nToken).Wait(nToken);
+                            Task.Delay(330, nToken).Wait(nToken);
                             //Debug.WriteLine("Delay end");
                             Check(nToken).Wait(nToken);
                             //Debug.WriteLine("Check end");
@@ -383,6 +388,16 @@ namespace KOTEM.BariVSPackage.BariExtension
             using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             using (var bufferedStream = new BufferedStream(stream, 1048576))
             {
+                //MD5CryptoServiceProvider md5 = null;
+
+                //if (md5Providers.TryDequeue(out md5))
+                //{
+                //    var res = md5.ComputeHash(bufferedStream);
+                //    md5Providers.Enqueue(md5);
+                //    return res;
+                //}
+
+                //throw new IndexOutOfRangeException();
                 return new MD5CryptoServiceProvider().ComputeHash(bufferedStream);
             }
         }
@@ -431,7 +446,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             InitCheckSums(openedProjects);
         }
-      
+
         public void Dispose()
         {
             Dispose(true);
