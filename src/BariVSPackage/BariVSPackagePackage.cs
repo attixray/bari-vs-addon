@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
-using EnvDTE80;
 using KOTEM.BariVSPackage.BariExtension.Option;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -55,6 +54,7 @@ namespace KOTEM.BariVSPackage
         }
 
         private readonly ILog log = LogManager.GetLogger(typeof(BariVsPackagePackage));
+        private const string vsProjectKindSolutionFolder = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}";
 
         private KeyboardHook keyboardHook;
         private SolutionWatcher solutionWatcher;
@@ -306,12 +306,26 @@ namespace KOTEM.BariVSPackage
                     if (prj != null)
                     {
                         //VS2017
-                        VCConfiguration config = prj.ActiveConfiguration;
-                        var debugsettings = config.DebugSettings as VCDebugSettings;
+                        try
+                        {
+                            VCConfiguration config = prj.ActiveConfiguration;
 
-                        debugsettings.Command = startProgram;
-                        debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
-                        debugsettings.WorkingDirectory = Path.GetDirectoryName(startProgram);
+                            //c:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\1033\debugger_local_windows.xml
+                            IVCRulePropertyStorage rule = config.Rules.Item("WindowsLocalDebugger") as IVCRulePropertyStorage;
+                            rule.SetPropertyValue("LocalDebuggerCommand", startProgram);
+                            rule.SetPropertyValue("LocalDebuggerCommandArguments", Properties.Settings.Default.StartArguments);
+                            rule.SetPropertyValue("LocalDebuggerWorkingDirectory", Path.GetDirectoryName(startProgram));
+
+                        }
+                        catch (Exception e)
+                        {
+                            VCConfiguration config = prj.ActiveConfiguration;
+                            var debugsettings = config.DebugSettings as VCDebugSettings;
+
+                            debugsettings.Command = startProgram;
+                            debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
+                            debugsettings.WorkingDirectory = Path.GetDirectoryName(startProgram);
+                        }
                     }
                     else
                     {
@@ -526,7 +540,7 @@ namespace KOTEM.BariVSPackage
                     continue;
                 }
 
-                if (project.Kind == ProjectKinds.vsProjectKindSolutionFolder)
+                if (project.Kind == vsProjectKindSolutionFolder)
                 {
                     list.AddRange(GetSolutionFolderProjects(project));
                 }
@@ -551,7 +565,7 @@ namespace KOTEM.BariVSPackage
                 }
 
                 // If this is another solution folder, do a recursive call, otherwise add
-                if (subProject.Kind == ProjectKinds.vsProjectKindSolutionFolder)
+                if (subProject.Kind == vsProjectKindSolutionFolder)
                 {
                     list.AddRange(GetSolutionFolderProjects(subProject));
                 }
