@@ -981,6 +981,16 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionEvents.OnBeforeCloseSolution(object pUnkReserved)
         {
+            var solutionDir = SolutionInfo.TargetWorkingDirectory;
+            if (SolutionInfo.IsBariSolution && solutionDir != null)
+            {
+                UnRegisterPriorityCommandTarget();
+                UnRegisterFileSystemWatcher();
+                UnRegisterReloadTimer();
+                DetachPluginFromSolution();
+                SetDialogKiller(false);
+                SetKeyboardHook(false);
+            }
             return VSConstants.S_OK;
         }
 
