@@ -229,6 +229,8 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionEvents_Opened()
         {
+            log.Info("SolutionEvents_Opened");
+
             AttachPluginToSolution();
 
             var solutionDir = SolutionInfo.TargetWorkingDirectory;
@@ -240,6 +242,7 @@ namespace KOTEM.BariVSPackage
                 }
                 catch (Exception ex)
                 {
+                    log.Warn("SetStartUpProject", ex);
                 }
             }
         }
@@ -276,8 +279,13 @@ namespace KOTEM.BariVSPackage
 
         private void SetStartUpProject()
         {
+            log.Info("SetStartUpProject");
+            log.Info($"SetStartUpProject: {Properties.Settings.Default.SetStartUpProject}");
+
             if (Properties.Settings.Default.SetStartUpProject && !startupSet)
             {
+                log.Info($"StartArguments: {Properties.Settings.Default.StartArguments}");
+
                 var cppProject = false;
                 var startProject = SolutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
 
@@ -309,42 +317,59 @@ namespace KOTEM.BariVSPackage
                         try
                         {
                             VCConfiguration config = prj.ActiveConfiguration;
-
+                            log.Info("Startup project 2017 storage");
                             //c:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\1033\debugger_local_windows.xml
                             IVCRulePropertyStorage rule = config.Rules.Item("WindowsLocalDebugger") as IVCRulePropertyStorage;
                             rule.SetPropertyValue("LocalDebuggerCommand", startProgram);
-                            rule.SetPropertyValue("LocalDebuggerCommandArguments", Properties.Settings.Default.StartArguments);
+                            var argument = rule.GetEvaluatedPropertyValue("LocalDebuggerCommandArguments");
+                            if (string.IsNullOrEmpty(argument))
+                            {
+                                rule.SetPropertyValue("LocalDebuggerCommandArguments", Properties.Settings.Default.StartArguments);
+                            }
                             rule.SetPropertyValue("LocalDebuggerWorkingDirectory", Path.GetDirectoryName(startProgram));
 
                         }
                         catch (Exception e)
                         {
+                            log.Info("Startup project 2017 debugsettings");
                             VCConfiguration config = prj.ActiveConfiguration;
                             var debugsettings = config.DebugSettings as VCDebugSettings;
 
                             debugsettings.Command = startProgram;
-                            debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
+                            if (string.IsNullOrEmpty(debugsettings.CommandArguments))
+                            {
+                                debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
+                            }
                             debugsettings.WorkingDirectory = Path.GetDirectoryName(startProgram);
                         }
                     }
                     else
                     {
                         //VS2013
+                        log.Info("Startup project 2013");
                         var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
                         activeConfogProps.Item("Command").Value = startProgram;
-                        activeConfogProps.Item("CommandArguments").Value = Properties.Settings.Default.StartArguments;
+                        if (string.IsNullOrEmpty(activeConfogProps.Item("CommandArguments").Value))
+                        {
+                            activeConfogProps.Item("CommandArguments").Value = Properties.Settings.Default.StartArguments;
+                        }
                         activeConfogProps.Item("WorkingDirectory").Value = Path.GetDirectoryName(startProgram);
                     }
                 }
                 else
                 {
+                    log.Info("Startup project C#");
                     var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
                     activeConfogProps.Item("StartAction").Value = (int)StartAction.Program;
                     activeConfogProps.Item("StartProgram").Value = startProgram;
-                    activeConfogProps.Item("StartArguments").Value = Properties.Settings.Default.StartArguments;
+                    if (string.IsNullOrEmpty(activeConfogProps.Item("StartArguments").Value))
+                    {
+                        activeConfogProps.Item("StartArguments").Value = Properties.Settings.Default.StartArguments;
+                    }
                     activeConfogProps.Item("StartWorkingDirectory").Value = Path.GetDirectoryName(startProgram);
                 }
 
+                log.Info("Startup projet set");
                 startupSet = true;
             }
         }
@@ -903,6 +928,8 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionLoadEvents.OnAfterBackgroundSolutionLoadComplete()
         {
+            log.Info("OnAfterBackgroundSolutionLoadComplete");
+
             AttachPluginToSolution();
             UpdateSolutionWatcher();
 
@@ -914,6 +941,7 @@ namespace KOTEM.BariVSPackage
                 }
                 catch (Exception ex)
                 {
+                    log.Warn("SetStartUpProject", ex);
                 }
             }
 
@@ -949,6 +977,7 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionEvents.OnAfterCloseSolution(object pUnkReserved)
         {
+            log.Info("OnAfterCloseSolution");
             solutionLoaded = false;
             SolutionInfo = null;
             startupSet = false;
@@ -970,7 +999,21 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionEvents.OnAfterOpenSolution(object pUnkReserved, int fNewSolution)
         {
+            log.Info("OnAfterOpenSolution");
             AttachPluginToSolution();
+
+            if (SolutionInfo != null && SolutionInfo.IsBariSolution)
+            {
+                try
+                {
+                    SetStartUpProject();
+                }
+                catch (Exception ex)
+                {
+                    log.Warn("SetStartUpProject", ex);
+                }
+            }
+
             return VSConstants.S_OK;
         }
 
