@@ -137,6 +137,8 @@ namespace KOTEM.BariVSPackage
         /// </summary>
         protected override void Initialize()
         {
+            Properties.Settings.Default.Reload();
+
             InitLogging();
 
             Debug.WriteLine("Entering Initialize() of: {0}", this);
