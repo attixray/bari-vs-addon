@@ -490,8 +490,6 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionWatcherOnChecked(object sender, EventArgs e)
         {
-            object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Synch;
-            StatusBar.Animation(0, ref icon);
             StatusBar.SetText(checkNumber > 1 ? "File changes checked." : "Checksums created.");
             checking = false;
         }
@@ -501,9 +499,6 @@ namespace KOTEM.BariVSPackage
             if (!checking)
             {
                 checking = true;
-                object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Synch;
-
-                StatusBar.Animation(1, ref icon);
                 StatusBar.SetText(checkNumber > 0 ? "Checking file changes..." : "Creating checksums...");
                 checkNumber++;
             }
