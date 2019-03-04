@@ -61,7 +61,6 @@ namespace KOTEM.BariVSPackage.BariExtension
         private STATaskScheduler scheduler;
         private STATaskScheduler timerScheduler;
         private STATaskScheduler md5Scheduler;
-        //private ConcurrentQueue<MD5CryptoServiceProvider> md5Providers = new ConcurrentQueue<MD5CryptoServiceProvider>();
 
         public string YamlPath { get; }
         public bool IsBusy => IsSuspended;
@@ -80,10 +79,6 @@ namespace KOTEM.BariVSPackage.BariExtension
             timerScheduler = new STATaskScheduler(Environment.ProcessorCount);
             md5Scheduler = new STATaskScheduler(Environment.ProcessorCount);
             this.openedProjects = new List<string>();
-            //for (var i = 0; i < md5Scheduler.MaximumConcurrencyLevel+15; i++)
-            //{
-            //    md5Providers.Enqueue(new MD5CryptoServiceProvider());
-            //}
             log.Info("SolutionWatcher initialized.");
 
             watcher = new FileSystemWatcher(srcDir)
@@ -143,7 +138,6 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                     Parallel.ForEach(tasks, (t) =>
                     {
-                        //t.Wait();
                         if (!checkSums.ContainsKey(t.Result.Item1))
                         {
                             checkSums.Add(t.Result.Item1, t.Result.Item2);
@@ -154,7 +148,6 @@ namespace KOTEM.BariVSPackage.BariExtension
                     {
                         if (!openedProjects.Contains(currentProject))
                         {
-                            log.Debug($"Project added to SolutionWatcher: {currentProject}");
                             openedProjects.Add(currentProject);
                         }
                     }
@@ -169,13 +162,9 @@ namespace KOTEM.BariVSPackage.BariExtension
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
             if (CheckProjects(e.FullPath.ToLower(), ext))
             {
-                log.Debug($"File NOT in project: {e.FullPath}");
                 return;
             }
 
-            //Debug.WriteLine("FileSystemChanged {0} - {1}", e.FullPath, e.ChangeType);
-
-            log.Debug($"File changed: {e.FullPath}");
             lock (changedFiles)
             {
                 changedFiles.Add(e.FullPath);
@@ -230,11 +219,8 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                         try
                         {
-                            //Debug.WriteLine("Delay start");
                             Task.Delay(330, nToken).Wait(nToken);
-                            //Debug.WriteLine("Delay end");
                             Check(nToken).Wait(nToken);
-                            //Debug.WriteLine("Check end");
                         }
                         catch (OperationCanceledException)
                         {
@@ -282,7 +268,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 {
                     return;
                 }
-                // Debug.WriteLine("CheckFiles start");
+
                 IList<string> files;
                 lock (changedFiles)
                 {
@@ -370,11 +356,6 @@ namespace KOTEM.BariVSPackage.BariExtension
 
                 if (args.Any())
                 {
-                    log.Debug("Changed event: ");
-                    foreach (var watcherChangeTypese in args)
-                    {
-                        log.Debug($"{watcherChangeTypese.Key} - {watcherChangeTypese.Value}");
-                    }
                     Changed?.Invoke(this, new ReloadEventArgs(args)
                     {
                         ReBuildNeeded = args.Any(ct => ct.Value == WatcherChangeTypes.Created || (ct.Value & WatcherChangeTypes.Deleted) != 0) || changed.Any(c => c.Key.EndsWith(".yaml"))
@@ -388,16 +369,6 @@ namespace KOTEM.BariVSPackage.BariExtension
             using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             using (var bufferedStream = new BufferedStream(stream, 1048576))
             {
-                //MD5CryptoServiceProvider md5 = null;
-
-                //if (md5Providers.TryDequeue(out md5))
-                //{
-                //    var res = md5.ComputeHash(bufferedStream);
-                //    md5Providers.Enqueue(md5);
-                //    return res;
-                //}
-
-                //throw new IndexOutOfRangeException();
                 return new MD5CryptoServiceProvider().ComputeHash(bufferedStream);
             }
         }
