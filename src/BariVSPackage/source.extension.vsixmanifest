@@ -1,8 +1,8 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="102d89df-1d64-4843-a75d-3a67bf3763a2" Version="1.8.0" Language="en-US" Publisher="KOTEM" />
-        <DisplayName>Bari VisualStudio Package</DisplayName>
+        <Identity Id="102d89df-1d64-4843-a75d-3a67bf3763a2" Version="1.10.6" Language="en-US" Publisher="KOTEM" />
+        <DisplayName>Bari VisualStudio Package 2019</DisplayName>
         <Description xml:space="preserve">Visual Studio addon for bari, an advanced build management tool for .NET projects.
     </Description>
     </Metadata>
