@@ -16,6 +16,8 @@ namespace KOTEM.BariVSPackage.BariExtension
             public IntPtr hwnd;
         };
 
+        #pragma warning disable 0618
+
         private HookProc messageHookProcedure;
         private IntPtr hHook;
 

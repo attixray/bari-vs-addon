@@ -11,12 +11,16 @@ using Microsoft.VisualStudio.VCProjectEngine;
 using KOTEM.BariVSPackage.BariExtension;
 using System.Windows.Forms;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using EnvDTE;
 using log4net;
 using log4net.Appender;
 using log4net.Core;
 using log4net.Layout;
 using log4net.Repository.Hierarchy;
+using Microsoft.VisualStudio.Threading;
+using Microsoft.WindowsAPICodePack.Shell.PropertySystem;
 using Commands = KOTEM.BariVSPackage.BariExtension.Commands;
 using Timer = System.Timers.Timer;
 
@@ -34,17 +38,17 @@ namespace KOTEM.BariVSPackage
     /// </summary>
     // This attribute tells the PkgDef creation utility (CreatePkgDef.exe) that this class is
     // a package.
-    [PackageRegistration(UseManagedResourcesOnly = true)]
+    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = false)]
     // This attribute is used to register the information needed to show this package
     // in the Help/About dialog of Visual Studio.
-    [ProvideAutoLoad(UIContextGuids80.NoSolution)]
+    [ProvideAutoLoad(UIContextGuids80.NoSolution, PackageAutoLoadFlags.None)]
     [InstalledProductRegistration("#110", "#112", "1.0", IconResourceID = 400)]
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "Addon", 201, 202, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "Addon", 201, 202, true)]
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
-    public sealed class BariVsPackagePackage : Package, IDisposable, IVsServiceProvider, IVsSolutionLoadEvents, IVsSolutionEvents, IPackage
+    public sealed class BariVsPackagePackage : AsyncPackage, IDisposable, IVsServiceProvider, IVsSolutionLoadEvents, IVsSolutionEvents, IPackage
     {
         private enum ChangeTypeEnum
         {
@@ -125,17 +129,13 @@ namespace KOTEM.BariVSPackage
             {
                 if (bar == null)
                 {
-                    bar = GetService(typeof(SVsStatusbar)) as IVsStatusbar;
+                    bar = GetService<SVsStatusbar>() as IVsStatusbar;
                 }
                 return bar;
             }
         }
 
-        /// <summary>
-        /// Initialization of the package; this method is called right after the package is sited, so this is the place
-        /// where you can put all the initialization code that rely on services provided by VisualStudio.
-        /// </summary>
-        protected override void Initialize()
+        protected override async System.Threading.Tasks.Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
             Properties.Settings.Default.Reload();
 
@@ -143,7 +143,7 @@ namespace KOTEM.BariVSPackage
 
             Debug.WriteLine("Entering Initialize() of: {0}", this);
 
-            var vsSolution = GetService(typeof(SVsSolution)) as IVsSolution;
+            var vsSolution = GetService<SVsSolution>() as IVsSolution;
             if (vsSolution != null)
             {
                 vsSolution.AdviseSolutionEvents(this, out solutionEventsCoockie);
@@ -152,7 +152,7 @@ namespace KOTEM.BariVSPackage
             RegisterKeyboardHook();
             RegisterDialogKiller();
 
-            base.Initialize();
+            await base.InitializeAsync(cancellationToken, progress);
         }
 
         private void InitLogging()
@@ -659,7 +659,7 @@ namespace KOTEM.BariVSPackage
 
         private int ShowMessageBox(string message)
         {
-            var uiShell = GetService(typeof(IVsUIShell)) as IVsUIShell;
+            var uiShell = GetService<IVsUIShell>() as IVsUIShell;
             Guid clsid = Guid.Empty;
             int result = VSConstants.S_FALSE;
 
@@ -827,7 +827,7 @@ namespace KOTEM.BariVSPackage
 
         private void ReloadProject(SolutionInfo solutionInfo, Project projectRef)
         {
-            var solution = base.GetService(typeof(SVsSolution)) as IVsSolution4;
+            var solution = GetService<SVsSolution>() as IVsSolution4;
             var solution2 = solution as IVsSolution2;
 
             IVsHierarchy selectedHierarchy;
@@ -866,7 +866,7 @@ namespace KOTEM.BariVSPackage
         private void ReloadSolution()
         {
             var slnName = GetDte().Solution.FullName;
-            var solution = GetService(typeof(SVsSolution)) as IVsSolution2;
+            var solution = GetService<SVsSolution>() as IVsSolution2;
             solution.CloseSolutionElement((uint)__VSSLNCLOSEOPTIONS.SLNCLOSEOPT_UnloadProject, null, 0);
             solution.OpenSolutionFile((int)__VSSLNOPENOPTIONS.SLNOPENOPT_AddToCurrent, slnName);
         }
@@ -874,7 +874,7 @@ namespace KOTEM.BariVSPackage
         private void UnRegisterPriorityCommandTarget()
         {
             var vsRegisterPriorityCommandTarget =
-                (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
+                (IVsRegisterPriorityCommandTarget)GetService<SVsRegisterPriorityCommandTarget>();
             if (vsRegisterPriorityCommandTarget == null) return;
             vsRegisterPriorityCommandTarget.UnregisterPriorityCommandTarget(registerCookie);
             registerCookie = 0;
@@ -884,7 +884,7 @@ namespace KOTEM.BariVSPackage
         {
             UnRegisterPriorityCommandTarget();
             var vsRegisterPriorityCommandTarget =
-                (IVsRegisterPriorityCommandTarget)GetService(typeof(SVsRegisterPriorityCommandTarget));
+                (IVsRegisterPriorityCommandTarget)GetService<SVsRegisterPriorityCommandTarget>();
             if (vsRegisterPriorityCommandTarget == null) return;
             vsRegisterPriorityCommandTarget.RegisterPriorityCommandTarget(0, target, out registerCookie);
         }
@@ -918,7 +918,7 @@ namespace KOTEM.BariVSPackage
 
         public T GetService<T>()
         {
-            return (T)GetService(typeof(T));
+            return (T)base.GetServiceAsync((typeof(T))).Result;
         }
 
         #region IVsSolutionLoadEvents
@@ -1143,7 +1143,7 @@ namespace KOTEM.BariVSPackage
             if (disposing)
             {
 
-                var vsSolution = GetService(typeof(SVsSolution)) as IVsSolution;
+                var vsSolution = GetService<SVsSolution>() as IVsSolution;
                 if (vsSolution != null)
                 {
                     vsSolution.UnadviseSolutionEvents(solutionEventsCoockie);

@@ -2,7 +2,7 @@
 
 namespace KOTEM.BariVSPackage.BariExtension.Utils
 {
-    public class SimpleStateHolder : IDisposable
+    public sealed class SimpleStateHolder : IDisposable
     {
         private bool isOnState;
         private readonly Action cleanUpAction;
