@@ -60,6 +60,14 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
             set { Properties.Settings.Default.Logging = value; }
         }
 
+        [Category("Misc")]
+        [Description("Set Debugger type to Manged Only option")]
+        public bool SetManagedDebugger
+        {
+            get { return Properties.Settings.Default.SetManagedDebugger; }
+            set { Properties.Settings.Default.SetManagedDebugger = value; }
+        }
+
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();

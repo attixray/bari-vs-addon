@@ -315,34 +315,44 @@ namespace KOTEM.BariVSPackage
 
                     if (prj != null)
                     {
-                        //VS2017
+                        //VS2017-19
                         try
                         {
-                            VCConfiguration config = prj.ActiveConfiguration;
-                            log.Info("Startup project 2017 storage");
-                            //c:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\1033\debugger_local_windows.xml
-                            IVCRulePropertyStorage rule = config.Rules.Item("WindowsLocalDebugger") as IVCRulePropertyStorage;
-                            rule.SetPropertyValue("LocalDebuggerCommand", startProgram);
-                            var argument = rule.GetEvaluatedPropertyValue("LocalDebuggerCommandArguments");
-                            if (string.IsNullOrEmpty(argument))
-                            {
-                                rule.SetPropertyValue("LocalDebuggerCommandArguments", Properties.Settings.Default.StartArguments);
-                            }
-                            rule.SetPropertyValue("LocalDebuggerWorkingDirectory", Path.GetDirectoryName(startProgram));
-
-                        }
-                        catch (Exception e)
-                        {
                             log.Info("Startup project 2017 debugsettings");
-                            VCConfiguration config = prj.ActiveConfiguration;
-                            var debugsettings = config.DebugSettings as VCDebugSettings;
+                            VCConfiguration config1 = prj.ActiveConfiguration;
+                            var debugsettings = config1.DebugSettings as VCDebugSettings;
 
+                            if (Properties.Settings.Default.SetManagedDebugger)
+                            {
+                                debugsettings.DebuggerType = TypeOfDebugger.DbgManagedOnly;
+                            }
                             debugsettings.Command = startProgram;
                             if (string.IsNullOrEmpty(debugsettings.CommandArguments))
                             {
                                 debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
                             }
                             debugsettings.WorkingDirectory = Path.GetDirectoryName(startProgram);
+                        }
+                        catch (Exception e)
+                        {
+                            try
+                            {
+                                VCConfiguration config = prj.ActiveConfiguration;
+                                log.Info("Startup project 2017 storage");
+                                //c:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\1033\debugger_local_windows.xml
+                                IVCRulePropertyStorage rule = config.Rules.Item("WindowsLocalDebugger") as IVCRulePropertyStorage;
+                                rule.SetPropertyValue("LocalDebuggerCommand", startProgram);
+                                var argument = rule.GetEvaluatedPropertyValue("LocalDebuggerCommandArguments");
+                                if (string.IsNullOrEmpty(argument))
+                                {
+                                    rule.SetPropertyValue("LocalDebuggerCommandArguments", Properties.Settings.Default.StartArguments);
+                                }
+
+                                rule.SetPropertyValue("LocalDebuggerWorkingDirectory", Path.GetDirectoryName(startProgram));
+                            }
+                            catch
+                            {
+                            }
                         }
                     }
                     else
