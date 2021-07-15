@@ -87,7 +87,7 @@ namespace KOTEM.BariVSPackage
         private bool checking;
         private int checkNumber;
         private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl", ".liquid" });
-        private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".yaml", ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
+        private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
         internal const int IDOK = 1;
         internal const int IDCANCEL = 2;

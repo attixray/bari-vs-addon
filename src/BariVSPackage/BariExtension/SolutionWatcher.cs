@@ -292,7 +292,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 var checkSumss = files.SelectMany(p =>
                     Directory.EnumerateFiles(IsFolder(p) ? p : Path.GetDirectoryName(p), "*.*", SearchOption.TopDirectoryOnly)
                         .Select(f => f.ToLowerInvariant())
-                        .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith))).Distinct();
+                        .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith) || file.EndsWith(".yaml"))).Distinct();
 
                 var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
                 Parallel.ForEach(checkSumss, (t) =>
@@ -354,7 +354,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     args[keyValuePair.Key] = WatcherChangeTypes.Changed;
                 }
 
-                if (args.Any())
+                if (args.Any() && !args.All(ct => projExtensions.Any(ct.Key.EndsWith)))
                 {
                     Changed?.Invoke(this, new ReloadEventArgs(args)
                     {
