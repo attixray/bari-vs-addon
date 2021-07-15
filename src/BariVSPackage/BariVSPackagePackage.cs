@@ -177,7 +177,7 @@ namespace KOTEM.BariVSPackage
             hierarchy.Root.Level = Properties.Settings.Default.Logging ? Level.Debug : Level.Off;
             hierarchy.RaiseConfigurationChanged(EventArgs.Empty);
             hierarchy.Configured = true;
-
+            
             log.Info("Logging initialized");
         }
 
@@ -232,6 +232,7 @@ namespace KOTEM.BariVSPackage
         private void SolutionEvents_Opened()
         {
             log.Info("SolutionEvents_Opened");
+            Properties.Settings.Default.Reload();
 
             AttachPluginToSolution();
 
@@ -936,6 +937,7 @@ namespace KOTEM.BariVSPackage
         int IVsSolutionLoadEvents.OnAfterBackgroundSolutionLoadComplete()
         {
             log.Info("OnAfterBackgroundSolutionLoadComplete");
+            Properties.Settings.Default.Reload();
 
             AttachPluginToSolution();
             UpdateSolutionWatcher();
@@ -1007,6 +1009,8 @@ namespace KOTEM.BariVSPackage
         int IVsSolutionEvents.OnAfterOpenSolution(object pUnkReserved, int fNewSolution)
         {
             log.Info("OnAfterOpenSolution");
+            Properties.Settings.Default.Reload();
+
             AttachPluginToSolution();
 
             if (SolutionInfo != null && SolutionInfo.IsBariSolution)
