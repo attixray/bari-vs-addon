@@ -20,7 +20,6 @@ using log4net.Core;
 using log4net.Layout;
 using log4net.Repository.Hierarchy;
 using Microsoft.VisualStudio.Threading;
-using Microsoft.WindowsAPICodePack.Shell.PropertySystem;
 using Commands = KOTEM.BariVSPackage.BariExtension.Commands;
 using Timer = System.Timers.Timer;
 
@@ -48,7 +47,7 @@ namespace KOTEM.BariVSPackage
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
-    public sealed class BariVsPackagePackage : AsyncPackage, IDisposable, IVsServiceProvider, IVsSolutionLoadEvents, IVsSolutionEvents, IPackage
+    public sealed class BariVsPackagePackage : Package, IDisposable, IVsServiceProvider, IVsSolutionLoadEvents, IVsSolutionEvents, IPackage
     {
         private enum ChangeTypeEnum
         {
@@ -135,7 +134,7 @@ namespace KOTEM.BariVSPackage
             }
         }
 
-        protected override async System.Threading.Tasks.Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
+        protected override void Initialize()
         {
             Properties.Settings.Default.Reload();
 
@@ -152,7 +151,7 @@ namespace KOTEM.BariVSPackage
             RegisterKeyboardHook();
             RegisterDialogKiller();
 
-            await base.InitializeAsync(cancellationToken, progress);
+            base.Initialize();
         }
 
         private void InitLogging()
@@ -362,7 +361,7 @@ namespace KOTEM.BariVSPackage
                         log.Info("Startup project 2013");
                         var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
                         activeConfogProps.Item("Command").Value = startProgram;
-                        if (string.IsNullOrEmpty(activeConfogProps.Item("CommandArguments").Value))
+                        if (string.IsNullOrEmpty(activeConfogProps.Item("CommandArguments").Value as string))
                         {
                             activeConfogProps.Item("CommandArguments").Value = Properties.Settings.Default.StartArguments;
                         }
@@ -375,7 +374,7 @@ namespace KOTEM.BariVSPackage
                     var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
                     activeConfogProps.Item("StartAction").Value = (int)StartAction.Program;
                     activeConfogProps.Item("StartProgram").Value = startProgram;
-                    if (string.IsNullOrEmpty(activeConfogProps.Item("StartArguments").Value))
+                    if (string.IsNullOrEmpty(activeConfogProps.Item("StartArguments").Value as string))
                     {
                         activeConfogProps.Item("StartArguments").Value = Properties.Settings.Default.StartArguments;
                     }
@@ -929,7 +928,7 @@ namespace KOTEM.BariVSPackage
 
         public T GetService<T>()
         {
-            return (T)base.GetServiceAsync((typeof(T))).Result;
+            return (T)base.GetService((typeof(T)));
         }
 
         #region IVsSolutionLoadEvents

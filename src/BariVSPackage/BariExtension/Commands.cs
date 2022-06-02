@@ -5,7 +5,6 @@ using System.Linq;
 using System.Windows.Forms;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell.Interop;
-using Microsoft.WindowsAPICodePack.Taskbar;
 using Process = System.Diagnostics.Process;
 
 namespace KOTEM.BariVSPackage.BariExtension
@@ -58,10 +57,6 @@ namespace KOTEM.BariVSPackage.BariExtension
             object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
             owner.StatusBar.Animation(1, ref icon);
             owner.StatusBar.SetText("Build started...");
-            if (TaskbarManager.IsPlatformSupported)
-            {
-                TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Indeterminate);
-            }
 
         }
 
@@ -76,10 +71,6 @@ namespace KOTEM.BariVSPackage.BariExtension
             else
             {
                 owner.StatusBar.SetText("Build failed!");
-            }
-            if (TaskbarManager.IsPlatformSupported)
-            {
-                TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.NoProgress);
             }
         }
 
