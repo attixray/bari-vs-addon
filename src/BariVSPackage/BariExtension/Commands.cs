@@ -6,6 +6,7 @@ using System.Windows.Forms;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell.Interop;
 using Process = System.Diagnostics.Process;
+using Community.VisualStudio.Toolkit;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -54,23 +55,20 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void ShowBuildStatus()
         {
-            object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
-            owner.StatusBar.Animation(1, ref icon);
-            owner.StatusBar.SetText("Build started...");
-
+            VS.StatusBar.StartAnimationAsync(StatusAnimation.Build);
+            VS.StatusBar.ShowMessageAsync("Build started...");
         }
 
         private void HideBuildStatus(bool cancelled, bool completed)
         {
-            object icon = (short)Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Build;
-            owner.StatusBar.Animation(0, ref icon);
+            VS.StatusBar.EndAnimationAsync(StatusAnimation.Build);
             if (completed)
             {
-                owner.StatusBar.SetText("Build completed!");
+                VS.StatusBar.ShowMessageAsync("Build completed");
             }
             else
             {
-                owner.StatusBar.SetText("Build failed!");
+                VS.StatusBar.ShowMessageAsync("Build failed");
             }
         }
 
@@ -302,7 +300,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(
+                    System.Windows.Forms.MessageBox.Show(
                         string.Format(
                             "Failed to start '{0}'.{1}" +
                             "Check Debug\\Properties\\Debug\\Startup action.{1}{1}" +
@@ -315,7 +313,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             return -1;
         }
 
-        private static string GetExeName(StartParameters startParameters, Project startupProject)
+        private static string GetExeName(StartParameters startParameters, EnvDTE.Project startupProject)
         {
             if (startParameters.StartAction == StartAction.Program)
             {
