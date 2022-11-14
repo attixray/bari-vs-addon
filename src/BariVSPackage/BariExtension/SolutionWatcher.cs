@@ -7,8 +7,10 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using EnvDTE;
 using KOTEM.BariVSPackage.BariExtension.Utils;
 using log4net;
+using Newtonsoft.Json.Linq;
 
 namespace KOTEM.BariVSPackage.BariExtension
 {
@@ -44,10 +46,6 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private readonly ILog log = LogManager.GetLogger(typeof(SolutionWatcher));
 
-        private readonly object taskLockObject = new object();
-        private CancellationTokenSource tokenSource;
-        private Task pendingTask;
-
         private readonly ChangeCompare changeComparer = new ChangeCompare();
         private readonly Predicate<string> isFileOpenedInSln;
         private readonly IList<string> openedProjects;
@@ -59,8 +57,8 @@ namespace KOTEM.BariVSPackage.BariExtension
         private FileSystemWatcher watcher;
         private FileSystemWatcher yamlWatcher;
         private STATaskScheduler scheduler;
-        private STATaskScheduler timerScheduler;
         private STATaskScheduler md5Scheduler;
+        private System.Timers.Timer timer;
 
         public string YamlPath { get; }
         public bool IsBusy => IsSuspended;
@@ -76,10 +74,13 @@ namespace KOTEM.BariVSPackage.BariExtension
             extensions = new HashSet<string>(extension);
             projExtensions = new HashSet<string>(projectExtension);
             scheduler = new STATaskScheduler(1);
-            timerScheduler = new STATaskScheduler(Environment.ProcessorCount);
             md5Scheduler = new STATaskScheduler(Environment.ProcessorCount);
             this.openedProjects = new List<string>();
             log.Info("SolutionWatcher initialized.");
+
+            timer = new System.Timers.Timer(330);
+            timer.AutoReset = false;
+            timer.Elapsed += Timer_Elapsed;
 
             watcher = new FileSystemWatcher(srcDir)
             {
@@ -104,7 +105,7 @@ namespace KOTEM.BariVSPackage.BariExtension
             Task.Factory.StartNew(() =>
             {
                 checkSums.Add(YamlPath.ToLowerInvariant(), ComputeChecksum(YamlPath));
-            }, CancellationToken.None, TaskCreationOptions.None, scheduler);
+            }, CancellationToken.None, TaskCreationOptions.HideScheduler, scheduler);
 
             watcher.Changed += FileSystemChanged;
             watcher.Deleted += FileSystemChanged;
@@ -116,6 +117,19 @@ namespace KOTEM.BariVSPackage.BariExtension
             yamlWatcher.Renamed += FileSystemChanged;
         }
 
+        protected override void OnBeginSuspend()
+        {
+            Checking?.Invoke(this, EventArgs.Empty);
+        }
+
+        protected override void OnEndSuspend(bool releaseCall)
+        {
+            if (releaseCall)
+            {
+                Checked?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
         private void InitCheckSums(IEnumerable<string> projects)
         {
             var currentProjects = projects.Where(p => projExtensions.Any(p.EndsWith)).Select(p => Directory.GetParent(Path.GetDirectoryName(p)).FullName.ToLower()).ToList();
@@ -123,27 +137,28 @@ namespace KOTEM.BariVSPackage.BariExtension
             {
                 Task.Factory.StartNew(() =>
                 {
-                    Checking?.Invoke(this, EventArgs.Empty);
                     var checkSumss = currentProjects.Except(openedProjects).SelectMany(p =>
                         Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
                             .Select(f => f.ToLowerInvariant())
                             .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith)));
 
-                    var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
-                    Parallel.ForEach(checkSumss, (t) =>
+                    if (checkSumss.Any())
                     {
-                        var task = Task.Factory.StartNew(() => new Tuple<string, byte[]>(t, ComputeChecksum(t)), CancellationToken.None, TaskCreationOptions.None, md5Scheduler);
-                        tasks.Add(task);
-                    });
-
-                    Parallel.ForEach(tasks, (t) =>
-                    {
-                        if (!checkSums.ContainsKey(t.Result.Item1))
+                        var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
+                        Parallel.ForEach(checkSumss, (t) =>
                         {
-                            checkSums.Add(t.Result.Item1, t.Result.Item2);
-                        }
-                    });
+                            var task = Task.Factory.StartNew(() => new Tuple<string, byte[]>(t, ComputeChecksum(t)), CancellationToken.None, TaskCreationOptions.None, md5Scheduler);
+                            tasks.Add(task);
+                        });
 
+                        Parallel.ForEach(tasks, (t) =>
+                        {
+                            if (!checkSums.ContainsKey(t.Result.Item1))
+                            {
+                                checkSums.Add(t.Result.Item1, t.Result.Item2);
+                            }
+                        });
+                    }
                     foreach (var currentProject in currentProjects)
                     {
                         if (!openedProjects.Contains(currentProject))
@@ -151,9 +166,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                             openedProjects.Add(currentProject);
                         }
                     }
-
-                    Checked?.Invoke(this, EventArgs.Empty);
-                }, CancellationToken.None, TaskCreationOptions.None, scheduler);
+                }, CancellationToken.None, TaskCreationOptions.HideScheduler, scheduler);
             }
         }
 
@@ -172,103 +185,28 @@ namespace KOTEM.BariVSPackage.BariExtension
 
             Checking?.Invoke(this, EventArgs.Empty);
 
-            StartCheck(CancellationToken.None);
+            StartCheck();
         }
 
-        private void StartCheck(CancellationToken token)
+        private void StartCheck()
         {
-            lock (taskLockObject)
-            {
-                var previousCts = tokenSource;
-                var previousTask = pendingTask;
-                var newCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-                tokenSource = newCts;
-                pendingTask = null;
-
-                pendingTask = Task.Factory.StartNew(state =>
-                {
-                    using (BeginSuspend())
-                    {
-                        var ptuple = state as Tuple<CancellationTokenSource, Task, CancellationToken>;
-                        var pCTS = ptuple.Item1;
-                        var pTask = ptuple.Item2;
-                        var nToken = ptuple.Item3;
-                        if (pCTS != null && pTask != null)
-                        {
-                            // cancel the previous session and wait for its termination
-                            if (!pTask.IsCompleted && !pCTS.IsCancellationRequested)
-                            {
-                                pCTS.Cancel();
-                            }
-
-                            try
-                            {
-                                if (!pTask.IsFaulted)
-                                {
-                                    pTask.Wait(nToken);
-                                }
-                            }
-                            catch (OperationCanceledException)
-                            {
-                            }
-                            finally
-                            {
-                                pCTS.Dispose();
-                            }
-                        }
-
-                        try
-                        {
-                            Task.Delay(330, nToken).Wait(nToken);
-                            Check(nToken).Wait(nToken);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                        }
-                    }
-                }, new Tuple<CancellationTokenSource, Task, CancellationToken>(previousCts, previousTask, newCts.Token), CancellationToken.None, TaskCreationOptions.HideScheduler, timerScheduler);
-            }
+            timer.Stop();
+            timer.Start();
         }
 
-        private bool CheckProjects(string e, string ext)
+        private void Timer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
-            if (string.IsNullOrEmpty(ext))
+            Task.Factory.StartNew(() =>
             {
-                return false;
-            }
-
-            if (!openedProjects.AsParallel().Any(e.StartsWith) && !ext.EndsWith("yaml"))
-            {
-                return true;
-            }
-            return false;
+                CheckFiles();
+            }, CancellationToken.None, TaskCreationOptions.HideScheduler, scheduler);
         }
 
-        private bool IsFolder(string path)
-        {
-            return string.IsNullOrEmpty(Path.GetExtension(path) ?? string.Empty);
-        }
-
-        private Task Check(CancellationToken token)
-        {
-            return Task.Factory.StartNew(() =>
-            {
-                CheckFiles(token);
-            }, token, TaskCreationOptions.None, scheduler).ContinueWith((t) =>
-                {
-                    Checked?.Invoke(this, EventArgs.Empty);
-                }, token, TaskContinuationOptions.OnlyOnRanToCompletion, scheduler);
-        }
-
-        private void CheckFiles(CancellationToken token)
+        private void CheckFiles()
         {
             using (BeginSuspend())
             {
-                if (token.IsCancellationRequested)
-                {
-                    return;
-                }
-
+                Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - start checksum");
                 IList<string> files;
                 lock (changedFiles)
                 {
@@ -364,6 +302,25 @@ namespace KOTEM.BariVSPackage.BariExtension
             }
         }
 
+        private bool CheckProjects(string e, string ext)
+        {
+            if (string.IsNullOrEmpty(ext))
+            {
+                return false;
+            }
+
+            if (!openedProjects.AsParallel().Any(e.StartsWith) && !ext.EndsWith("yaml"))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private bool IsFolder(string path)
+        {
+            return string.IsNullOrEmpty(Path.GetExtension(path) ?? string.Empty);
+        }
+
         private byte[] ComputeChecksum(string path)
         {
             using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
@@ -391,24 +348,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     yamlWatcher = null;
                 }
 
-                if (tokenSource != null)
-                {
-                    if (!tokenSource.IsCancellationRequested)
-                    {
-                        tokenSource.Cancel();
-                    }
-                    if (pendingTask != null && !pendingTask.IsCompleted)
-                    {
-                        pendingTask.Wait();
-                    }
-                    if (pendingTask != null)
-                    {
-                        pendingTask.Dispose();
-                    }
-                }
-
                 scheduler?.Dispose();
-                timerScheduler?.Dispose();
                 md5Scheduler?.Dispose();
             }
         }

@@ -32,7 +32,7 @@ namespace KOTEM.BariVSPackage.BariExtension.Utils
         /// <summary>
         /// <see cref="EndSuspend"/> notification. It is called the same number of times as the <see cref="OnBeginSuspend"/>.
         /// </summary>
-        protected virtual void OnEndSuspend()
+        protected virtual void OnEndSuspend(bool releaseCall)
         {
             // Do nothing at this level...
         }
@@ -52,7 +52,7 @@ namespace KOTEM.BariVSPackage.BariExtension.Utils
                 throw new NotSuspendedException();
             }
 
-            OnEndSuspend();
+            OnEndSuspend(!IsSuspended);
         }
 
         private long GetSuspendCount()

@@ -22,6 +22,7 @@ using log4net.Repository.Hierarchy;
 using Microsoft.VisualStudio.Threading;
 using Commands = KOTEM.BariVSPackage.BariExtension.Commands;
 using Timer = System.Timers.Timer;
+using Microsoft.VisualStudio.TaskStatusCenter;
 
 namespace KOTEM.BariVSPackage
 {
@@ -75,6 +76,7 @@ namespace KOTEM.BariVSPackage
         private IVsStatusbar bar;
         private bool startupSet;
         private uint solutionEventsCoockie;
+        private IVsThreadedWaitDialog4 twd;
 
         private ChangeTypeEnum changeType;
         private bool reloadNeededAfterDebug;
@@ -84,7 +86,6 @@ namespace KOTEM.BariVSPackage
         private object[] savedStartUp;
         private string activeDocument;
         private bool checking;
-        private int checkNumber;
         private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl", ".liquid" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
@@ -120,18 +121,6 @@ namespace KOTEM.BariVSPackage
         public bool IsWatcherBusy
         {
             get { return solutionWatcher.IsBusy; }
-        }
-
-        public IVsStatusbar StatusBar
-        {
-            get
-            {
-                if (bar == null)
-                {
-                    bar = GetService<SVsStatusbar>() as IVsStatusbar;
-                }
-                return bar;
-            }
         }
 
         protected override void Initialize()
@@ -176,7 +165,7 @@ namespace KOTEM.BariVSPackage
             hierarchy.Root.Level = Properties.Settings.Default.Logging ? Level.Debug : Level.Off;
             hierarchy.RaiseConfigurationChanged(EventArgs.Empty);
             hierarchy.Configured = true;
-            
+
             log.Info("Logging initialized");
         }
 
@@ -502,7 +491,13 @@ namespace KOTEM.BariVSPackage
 
         private void SolutionWatcherOnChecked(object sender, EventArgs e)
         {
-            StatusBar.SetText(checkNumber > 1 ? "File changes checked." : "Checksums created.");
+            Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checked");
+            if (twd is IDisposable twdd)
+                twdd.Dispose();
+            twd = null;
+
+            Community.VisualStudio.Toolkit.VS.StatusBar.ClearAsync();
+
             checking = false;
         }
 
@@ -511,29 +506,43 @@ namespace KOTEM.BariVSPackage
             if (!checking)
             {
                 checking = true;
-                StatusBar.SetText(checkNumber > 0 ? "Checking file changes..." : "Creating checksums...");
-                checkNumber++;
+
+                Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checking");
+                ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    var fac = await Community.VisualStudio.Toolkit.VS.Services.GetThreadedWaitDialogAsync() as IVsThreadedWaitDialogFactory;
+
+                    if (twd is IDisposable twdd)
+                        twdd.Dispose();
+
+                    twd = fac.CreateInstance();
+
+                    twd.StartWaitDialog("Bari", "Checking file changes...", "", null, "Checking file changes...", 0, false, true);
+                }).Join();
             }
         }
 
         private bool IsFileInProject(string fileName)
         {
+            Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - IsFileInProject 1");
             var project = GetProject(GetProjectName(fileName));
 
             var res = false;
 
             var file = Path.GetFileName(fileName);
 
-            var items = project.ProjectItems.GetEnumerator();
-            while (items.MoveNext())
+            foreach (var item in project.ProjectItems)
             {
-                var item = (ProjectItem)items.Current;
-                if (GetFiles(item).Any(p => p.Equals(file, StringComparison.InvariantCultureIgnoreCase)))
+                var pItem = (ProjectItem)item;
+                if (GetFiles(pItem).AsParallel().Any(p => p.Equals(file, StringComparison.InvariantCultureIgnoreCase)))
                 {
                     res = true;
+                    break;
                 }
             }
 
+            Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - IsFileInProject 2");
             Debug.WriteLine("IsFileInProject: {0} - {1} - {2}", project.Name, fileName, res);
 
             return res;
@@ -543,15 +552,17 @@ namespace KOTEM.BariVSPackage
         {
             //base case
             if (item.ProjectItems == null)
+            {
                 return new List<string> { item.Name.ToLowerInvariant() };
+            }
 
             //      Debug.WriteLine("{0} - {1}", item.Name, item.ProjectItems == null ? -1 : item.ProjectItems.Count);
 
-            var items = item.ProjectItems.GetEnumerator();
             var ret = new List<string> { item.Name.ToLowerInvariant() };
-            while (items.MoveNext())
+
+            foreach (var pitem in item.ProjectItems)
             {
-                var currentItem = (ProjectItem)items.Current;
+                var currentItem = (ProjectItem)pitem;
                 ret.AddRange(GetFiles(currentItem));
             }
 
