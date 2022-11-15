@@ -19,7 +19,6 @@ using log4net.Appender;
 using log4net.Core;
 using log4net.Layout;
 using log4net.Repository.Hierarchy;
-using Microsoft.VisualStudio.Threading;
 using Commands = KOTEM.BariVSPackage.BariExtension.Commands;
 using Timer = System.Timers.Timer;
 using Microsoft.VisualStudio.TaskStatusCenter;
@@ -73,10 +72,9 @@ namespace KOTEM.BariVSPackage
         private SolutionInfo solutionInfo;
         private bool solutionLoaded;
         private DTE dte;
-        private IVsStatusbar bar;
         private bool startupSet;
         private uint solutionEventsCoockie;
-        private IVsThreadedWaitDialog4 twd;
+        private ManualResetEvent mre = new ManualResetEvent(false);
 
         private ChangeTypeEnum changeType;
         private bool reloadNeededAfterDebug;
@@ -492,9 +490,8 @@ namespace KOTEM.BariVSPackage
         private void SolutionWatcherOnChecked(object sender, EventArgs e)
         {
             Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checked");
-            if (twd is IDisposable twdd)
-                twdd.Dispose();
-            twd = null;
+
+            mre.Set();
 
             Community.VisualStudio.Toolkit.VS.StatusBar.ClearAsync();
 
@@ -508,18 +505,23 @@ namespace KOTEM.BariVSPackage
                 checking = true;
 
                 Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checking");
-                ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-                {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    var fac = await Community.VisualStudio.Toolkit.VS.Services.GetThreadedWaitDialogAsync() as IVsThreadedWaitDialogFactory;
 
-                    if (twd is IDisposable twdd)
-                        twdd.Dispose();
+                IVsTaskStatusCenterService tsc = Community.VisualStudio.Toolkit.VS.Services.GetTaskStatusCenterAsync().Result;
 
-                    twd = fac.CreateInstance();
+                var options = default(TaskHandlerOptions);
+                options.Title = "Bari";
+                options.ActionsAfterCompletion = CompletionActions.None;
 
-                    twd.StartWaitDialog("Bari", "Checking file changes...", "", null, "Checking file changes...", 0, false, true);
-                }).Join();
+                var data = default(TaskProgressData);
+                data.CanBeCanceled = false;
+                data.PercentComplete = null;
+                data.ProgressText = "Checking file changes...";
+
+                ITaskHandler handler = tsc.PreRegister(options, data);
+
+                Community.VisualStudio.Toolkit.VS.StatusBar.ShowMessageAsync(data.ProgressText);
+                mre.Reset();
+                handler.RegisterTask(Task.Factory.StartNew(mre.WaitOne));
             }
         }
 

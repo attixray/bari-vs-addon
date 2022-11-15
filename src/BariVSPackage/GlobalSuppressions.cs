@@ -8,4 +8,7 @@
 // Suppression File". You do not need to add suppressions to this
 // file manually.
 
+using System.Diagnostics.CodeAnalysis;
+
 [assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1017:MarkAssembliesWithComVisible")]
+[assembly: SuppressMessage("Usage", "VSTHRD010:Invoke single-threaded types on Main thread")]
