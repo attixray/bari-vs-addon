@@ -59,9 +59,10 @@ namespace KOTEM.BariVSPackage.BariExtension
         private STATaskScheduler scheduler;
         private STATaskScheduler md5Scheduler;
         private System.Timers.Timer timer;
+        private bool started;
 
         public string YamlPath { get; }
-        public bool IsBusy => IsSuspended;
+        public bool IsBusy => IsSuspended || started;
 
         public event EventHandler<ReloadEventArgs> Changed;
         public event EventHandler Checking;
@@ -172,6 +173,8 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
         {
+            started = true;
+
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
             if (CheckProjects(e.FullPath.ToLower(), ext))
             {
@@ -198,6 +201,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         {
             Task.Factory.StartNew(() =>
             {
+                started = false;
                 CheckFiles();
             }, CancellationToken.None, TaskCreationOptions.HideScheduler, scheduler);
         }

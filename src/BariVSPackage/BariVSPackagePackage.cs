@@ -22,6 +22,8 @@ using log4net.Repository.Hierarchy;
 using Commands = KOTEM.BariVSPackage.BariExtension.Commands;
 using Timer = System.Timers.Timer;
 using Microsoft.VisualStudio.TaskStatusCenter;
+using Microsoft.Internal.VisualStudio.PlatformUI;
+using Microsoft.VisualStudio.Threading;
 
 namespace KOTEM.BariVSPackage
 {
@@ -84,6 +86,7 @@ namespace KOTEM.BariVSPackage
         private object[] savedStartUp;
         private string activeDocument;
         private bool checking;
+        private IVsTaskStatusCenterService tsc;
         private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl", ".liquid" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
@@ -490,11 +493,7 @@ namespace KOTEM.BariVSPackage
         private void SolutionWatcherOnChecked(object sender, EventArgs e)
         {
             Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checked");
-
             mre.Set();
-
-            Community.VisualStudio.Toolkit.VS.StatusBar.ClearAsync();
-
             checking = false;
         }
 
@@ -504,24 +503,30 @@ namespace KOTEM.BariVSPackage
             {
                 checking = true;
 
-                Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checking");
+                ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                {
+                    Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checking");
+                    mre.Reset();
 
-                IVsTaskStatusCenterService tsc = Community.VisualStudio.Toolkit.VS.Services.GetTaskStatusCenterAsync().Result;
+                    var options = default(TaskHandlerOptions);
+                    options.Title = "Bari";
+                    options.ActionsAfterCompletion = CompletionActions.None;
 
-                var options = default(TaskHandlerOptions);
-                options.Title = "Bari";
-                options.ActionsAfterCompletion = CompletionActions.None;
+                    var data = default(TaskProgressData);
+                    data.CanBeCanceled = false;
+                    data.PercentComplete = null;
+                    data.ProgressText = "Checking file changes...";
 
-                var data = default(TaskProgressData);
-                data.CanBeCanceled = false;
-                data.PercentComplete = null;
-                data.ProgressText = "Checking file changes...";
+                    ITaskHandler handler = tsc.PreRegister(options, data);
 
-                ITaskHandler handler = tsc.PreRegister(options, data);
-
-                Community.VisualStudio.Toolkit.VS.StatusBar.ShowMessageAsync(data.ProgressText);
-                mre.Reset();
-                handler.RegisterTask(Task.Factory.StartNew(mre.WaitOne));
+                    handler.RegisterTask(
+                        Task.Factory.StartNew(() =>
+                        {
+                            Community.VisualStudio.Toolkit.VS.StatusBar.ShowMessageAsync(data.ProgressText);
+                            mre.WaitOne();
+                            Community.VisualStudio.Toolkit.VS.StatusBar.ClearAsync();
+                        }));
+                });
             }
         }
 
@@ -1144,6 +1149,8 @@ namespace KOTEM.BariVSPackage
                     RegisterFileSystemWatcher();
                     SetDialogKiller(true);
                     SetKeyboardHook(true);
+
+                    tsc = Community.VisualStudio.Toolkit.VS.Services.GetTaskStatusCenterAsync().Result;
 
                     GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
                     GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
