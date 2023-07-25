@@ -70,7 +70,6 @@ namespace KOTEM.BariVSPackage
         private Timer reloadTimer;
         private readonly HashSet<string> itemsChanged = new HashSet<string>();
         private readonly HashSet<string> itemsChangedDuringCommand = new HashSet<string>();
-        private readonly Dictionary<string, bool> documents = new Dictionary<string, bool>();
         private SolutionInfo solutionInfo;
         private bool solutionLoaded;
         private DTE dte;
@@ -79,15 +78,12 @@ namespace KOTEM.BariVSPackage
         private ManualResetEvent mre = new ManualResetEvent(false);
 
         private ChangeTypeEnum changeType;
-        private bool reloadNeededAfterDebug;
         private bool reBuildNeeded;
         private bool reloading;
         private bool commandRunning;
-        private object[] savedStartUp;
-        private string activeDocument;
         private bool checking;
         private IVsTaskStatusCenterService tsc;
-        private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl", ".liquid" });
+        private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl", ".liquid", ".json", ".config", ".manifest" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
         internal const int IDOK = 1;
@@ -190,32 +186,12 @@ namespace KOTEM.BariVSPackage
                         itemsChanged.Add(collection);
                     }
                 }
-
-                if (Properties.Settings.Default.PromptReload)
-                {
-                    if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
-                    {
-                        Reload();
-                    }
-                }
-                else
-                {
-                    Reload();
-                }
             }
 
             changeType = ChangeTypeEnum.OnlyBuild;
             itemsChangedDuringCommand.Clear();
             itemsChanged.Clear();
             commandRunning = false;
-        }
-
-        private void DebuggerEvents_OnEnterDesignMode(dbgEventReason Reason)
-        {
-            if (reloadNeededAfterDebug)
-            {
-                ProcessReload();
-            }
         }
 
         private void SolutionEvents_Opened()
@@ -733,144 +709,6 @@ namespace KOTEM.BariVSPackage
             }, Guid.Empty);
         }
 
-        private void Reload()
-        {
-            if (Environment.HasShutdownStarted || AppDomain.CurrentDomain.IsFinalizingForUnload() || !itemsChanged.Any())
-                return;
-
-            if (IsDebugging)
-            {
-                reloadNeededAfterDebug = true;
-                return;
-            }
-
-            GetDte().Documents.SaveAll();
-
-            var onlySolution = itemsChanged.Any(item => item.ToLower().EndsWith(".sln"));
-
-            var items = itemsChanged.Where(file => !file.EndsWith(".yaml") && (extensions.Contains(Path.GetExtension(file)) || projExtensions.Contains(Path.GetExtension(file)))).Select(GetProjectName);
-            items = items.Where(i => i != null).Distinct().ToList();
-
-            var projectItems = items.Select(GetProject).ToList();
-
-            onlySolution = onlySolution || (projectItems.Count() > (GetDte().Solution.Projects.Count / 2));
-
-            if (onlySolution)
-            {
-                ReloadSolution();
-            }
-            else
-            {
-                if (projectItems.Any())
-                {
-                    SaveDocuments(projectItems.Select(p => p.UniqueName).ToList());
-                    SaveStartupProject();
-
-                    foreach (var item in projectItems)
-                    {
-                        try
-                        {
-                            Debug.WriteLine(item.UniqueName);
-                            ReloadProject(SolutionInfo, item);
-                        }
-                        catch (Exception e)
-                        {
-                        }
-                    }
-
-                    System.Threading.Thread.Sleep(50);
-
-                    ReloadDocuments();
-                    ReloadStartupProject();
-                }
-            }
-
-            reloadNeededAfterDebug = false;
-        }
-
-        private void ReloadStartupProject()
-        {
-            if (savedStartUp != null)
-            {
-                if (savedStartUp.Length == 1)
-                    GetDte().Solution.SolutionBuild.StartupProjects = savedStartUp[0];
-                else
-                    GetDte().Solution.SolutionBuild.StartupProjects = savedStartUp;
-            }
-        }
-
-        private void SaveStartupProject()
-        {
-            savedStartUp = GetDte().Solution.SolutionBuild.StartupProjects as object[];
-        }
-
-        private void SaveDocuments(IEnumerable<string> reopenedProjects)
-        {
-            if (!Properties.Settings.Default.KeepFilesOpen)
-                return;
-
-            var projects = reopenedProjects.Select(p => GetProjectName(p)).ToList();
-            activeDocument = GetDte().ActiveDocument == null ? string.Empty : GetDte().ActiveDocument.FullName;
-
-            documents.Clear();
-            foreach (var document in GetDte().Documents.OfType<Document>().Where(d => projects.Contains(GetProjectName(d.FullName))))
-            {
-                object pinned = null;
-                var frame = GetWindowFrameFromDocument(document.FullName);
-                if (frame != null)
-                    frame.GetProperty((int)__VSFPROPID5.VSFPROPID_IsPinned, out pinned);
-
-                documents.Add(document.FullName, pinned != null && (bool)pinned);
-            }
-
-            System.Threading.Thread.Sleep(50);
-        }
-
-        private void ReloadDocuments()
-        {
-            if (!Properties.Settings.Default.KeepFilesOpen)
-                return;
-
-            var dte = GetDte();
-            Window activeWindow = null;
-            foreach (var document in documents.Reverse())
-            {
-                if (File.Exists(document.Key))
-                {
-                    var win = dte.ItemOperations.OpenFile(document.Key);
-                    if (document.Key.Equals(activeDocument))
-                        activeWindow = win;
-
-                    var frame = GetWindowFrameFromDocument(document.Key);
-                    if (frame != null)
-                        frame.SetProperty((int)__VSFPROPID5.VSFPROPID_IsPinned, document.Value);
-
-                    System.Threading.Thread.Sleep(10);
-                }
-            }
-
-            if (activeWindow != null)
-                activeWindow.Activate();
-        }
-
-        private void ReloadProject(SolutionInfo solutionInfo, Project projectRef)
-        {
-            var solution = GetService<SVsSolution>() as IVsSolution4;
-            var solution2 = solution as IVsSolution2;
-
-            IVsHierarchy selectedHierarchy;
-            solution2.GetProjectOfUniqueName(projectRef.UniqueName, out selectedHierarchy);
-
-            if (selectedHierarchy != null)
-            {
-                Guid guid;
-                solution2.GetGuidOfProject(selectedHierarchy, out guid);
-                solution.UnloadProject(ref guid, (uint)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
-                System.Threading.Thread.Sleep(50);
-                solution.ReloadProject(ref guid);
-            }
-        }
-
         private string GetProjectName(string projectFile)
         {
             if (projectFile.Contains("{"))//project
@@ -891,14 +729,6 @@ namespace KOTEM.BariVSPackage
             return projectFile;
         }
 
-        private void ReloadSolution()
-        {
-            var slnName = GetDte().Solution.FullName;
-            var solution = GetService<SVsSolution>() as IVsSolution2;
-            solution.CloseSolutionElement((uint)__VSSLNCLOSEOPTIONS.SLNCLOSEOPT_UnloadProject, null, 0);
-            solution.OpenSolutionFile((int)__VSSLNOPENOPTIONS.SLNOPENOPT_AddToCurrent, slnName);
-        }
-
         private void UnRegisterPriorityCommandTarget()
         {
             var vsRegisterPriorityCommandTarget =
@@ -915,25 +745,6 @@ namespace KOTEM.BariVSPackage
                 (IVsRegisterPriorityCommandTarget)GetService<SVsRegisterPriorityCommandTarget>();
             if (vsRegisterPriorityCommandTarget == null) return;
             vsRegisterPriorityCommandTarget.RegisterPriorityCommandTarget(0, target, out registerCookie);
-        }
-
-        private IVsWindowFrame GetWindowFrameFromDocument(string path)
-        {
-            var shell = GetService<IVsUIShell>();
-            IEnumWindowFrames frames;
-            shell.GetDocumentWindowEnum(out frames);
-
-            if (frames == null)
-                return null;
-
-            foreach (IVsWindowFrame enumWindowFrame in ComUtilities.EnumerableFrom(frames))
-            {
-                object doc;
-                enumWindowFrame.GetProperty((int)__VSFPROPID.VSFPROPID_pszMkDocument, out doc);
-                if (doc is string && doc.ToString().ToLower().Equals(path.ToLower()))
-                    return enumWindowFrame;
-            }
-            return null;
         }
 
 
@@ -1104,7 +915,6 @@ namespace KOTEM.BariVSPackage
             {
                 dte.Events.SolutionEvents.Opened -= SolutionEvents_Opened;
                 dte.Events.SolutionEvents.BeforeClosing -= SolutionEvents_BeforeClosing;
-                dte.Events.DebuggerEvents.OnEnterDesignMode -= DebuggerEvents_OnEnterDesignMode;
             }
             catch (Exception)
             {
@@ -1154,7 +964,6 @@ namespace KOTEM.BariVSPackage
 
                     GetDte().Events.SolutionEvents.Opened += SolutionEvents_Opened;
                     GetDte().Events.SolutionEvents.BeforeClosing += SolutionEvents_BeforeClosing;
-                    GetDte().Events.DebuggerEvents.OnEnterDesignMode += DebuggerEvents_OnEnterDesignMode;
                 }
                 else
                 {
