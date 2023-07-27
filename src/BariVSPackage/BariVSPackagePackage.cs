@@ -24,6 +24,7 @@ using Timer = System.Timers.Timer;
 using Microsoft.VisualStudio.TaskStatusCenter;
 using Microsoft.Internal.VisualStudio.PlatformUI;
 using Microsoft.VisualStudio.Threading;
+using KOTEM.BariVSPackage.Tools;
 
 namespace KOTEM.BariVSPackage
 {
@@ -252,92 +253,106 @@ namespace KOTEM.BariVSPackage
 
             if (Properties.Settings.Default.SetStartUpProject && !startupSet)
             {
+                var mw = System.Windows.Application.Current.MainWindow;
+                mw.Title = GetDte().MainWindow.Caption + " (bari)";
+
                 log.Info($"StartArguments: {Properties.Settings.Default.StartArguments}");
 
-                var cppProject = false;
-                var startProject = SolutionInfo.BariConfig.StartupPath.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".csproj";
+                var startProjectPaths = SolutionInfo.BariConfig.StartupPath.Split(',').Select(s => s.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".");
 
-                if (string.IsNullOrEmpty(startProject)) return;
+                if (startProjectPaths == null || !startProjectPaths.Any()) return;
 
-                var startupProject = GetProject(startProject);
+                var startupProjects = startProjectPaths.Select(GetProject).OfType<Project>().ToList();
 
-                if (startupProject == null)
+                if (startupProjects == null || !startupProjects.Any()) return;
+
+                if (startupProjects.Count > 1)
+                    GetDte().Solution.SolutionBuild.StartupProjects = startupProjects.Select(s => s.UniqueName).ToArray();
+                else
+                    GetDte().Solution.SolutionBuild.StartupProjects = startupProjects[0].UniqueName;
+
+                foreach (var project in startupProjects)
                 {
-                    startProject = Path.ChangeExtension(startProject, "vcxproj");
-                    startupProject = GetProject(startProject);
-                    cppProject = true;
+                    SetStartupParams(project);
                 }
 
-                if (startupProject == null) return;
+                log.Info("Startup projet set");
+                startupSet = true;
+            }
+        }
 
+        private void SetStartupParams(Project project)
+        {
+            var cppProject = project.UniqueName.Contains("vcxproj");
 
-                GetDte().Solution.SolutionBuild.StartupProjects = startupProject.UniqueName;
+            var startProgram = Path.Combine(Path.GetDirectoryName(SolutionInfo.Solution),
+                                            SolutionInfo.BariConfig.Target,
+                                            project.Name + ".exe");
 
-                var startProgram = Path.GetDirectoryName(SolutionInfo.Solution) + "\\" + SolutionInfo.BariConfig.Target
-                                   + "\\" + SolutionInfo.BariConfig.StartupPath.Split('\\').LastOrDefault();
-                if (cppProject)
+            if (cppProject)
+            {
+                var prj = project.Object as VCProject;
+
+                if (prj != null)
                 {
-                    var prj = startupProject.Object as VCProject;
-
-                    if (prj != null)
+                    //VS2017-19
+                    try
                     {
-                        //VS2017-19
+                        log.Info("Startup project 2017 debugsettings");
+                        VCConfiguration config1 = prj.ActiveConfiguration;
+                        var debugsettings = config1.DebugSettings as VCDebugSettings;
+
+                        if (Properties.Settings.Default.SetManagedDebugger)
+                        {
+                            debugsettings.DebuggerType = TypeOfDebugger.DbgManagedOnly;
+                        }
+                        debugsettings.Command = startProgram;
+                        if (string.IsNullOrEmpty(debugsettings.CommandArguments))
+                        {
+                            debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
+                        }
+                        debugsettings.WorkingDirectory = Path.GetDirectoryName(startProgram);
+                    }
+                    catch (Exception e)
+                    {
                         try
                         {
-                            log.Info("Startup project 2017 debugsettings");
-                            VCConfiguration config1 = prj.ActiveConfiguration;
-                            var debugsettings = config1.DebugSettings as VCDebugSettings;
+                            VCConfiguration config = prj.ActiveConfiguration;
+                            log.Info("Startup project 2017 storage");
+                            IVCRulePropertyStorage rule = config.Rules.Item("WindowsLocalDebugger") as IVCRulePropertyStorage;
+                            rule.SetPropertyValue("LocalDebuggerCommand", startProgram);
+                            var argument = rule.GetEvaluatedPropertyValue("LocalDebuggerCommandArguments");
+                            if (string.IsNullOrEmpty(argument))
+                            {
+                                rule.SetPropertyValue("LocalDebuggerCommandArguments", Properties.Settings.Default.StartArguments);
+                            }
 
-                            if (Properties.Settings.Default.SetManagedDebugger)
-                            {
-                                debugsettings.DebuggerType = TypeOfDebugger.DbgManagedOnly;
-                            }
-                            debugsettings.Command = startProgram;
-                            if (string.IsNullOrEmpty(debugsettings.CommandArguments))
-                            {
-                                debugsettings.CommandArguments = Properties.Settings.Default.StartArguments;
-                            }
-                            debugsettings.WorkingDirectory = Path.GetDirectoryName(startProgram);
+                            rule.SetPropertyValue("LocalDebuggerWorkingDirectory", Path.GetDirectoryName(startProgram));
                         }
-                        catch (Exception e)
+                        catch
                         {
-                            try
-                            {
-                                VCConfiguration config = prj.ActiveConfiguration;
-                                log.Info("Startup project 2017 storage");
-                                //c:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\1033\debugger_local_windows.xml
-                                IVCRulePropertyStorage rule = config.Rules.Item("WindowsLocalDebugger") as IVCRulePropertyStorage;
-                                rule.SetPropertyValue("LocalDebuggerCommand", startProgram);
-                                var argument = rule.GetEvaluatedPropertyValue("LocalDebuggerCommandArguments");
-                                if (string.IsNullOrEmpty(argument))
-                                {
-                                    rule.SetPropertyValue("LocalDebuggerCommandArguments", Properties.Settings.Default.StartArguments);
-                                }
-
-                                rule.SetPropertyValue("LocalDebuggerWorkingDirectory", Path.GetDirectoryName(startProgram));
-                            }
-                            catch
-                            {
-                            }
                         }
-                    }
-                    else
-                    {
-                        //VS2013
-                        log.Info("Startup project 2013");
-                        var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
-                        activeConfogProps.Item("Command").Value = startProgram;
-                        if (string.IsNullOrEmpty(activeConfogProps.Item("CommandArguments").Value as string))
-                        {
-                            activeConfogProps.Item("CommandArguments").Value = Properties.Settings.Default.StartArguments;
-                        }
-                        activeConfogProps.Item("WorkingDirectory").Value = Path.GetDirectoryName(startProgram);
                     }
                 }
                 else
                 {
-                    log.Info("Startup project C#");
-                    var activeConfogProps = startupProject.ConfigurationManager.ActiveConfiguration.Properties;
+                    //VS2013
+                    log.Info("Startup project 2013");
+                    var activeConfogProps = project.ConfigurationManager.ActiveConfiguration.Properties;
+                    activeConfogProps.Item("Command").Value = startProgram;
+                    if (string.IsNullOrEmpty(activeConfogProps.Item("CommandArguments").Value as string))
+                    {
+                        activeConfogProps.Item("CommandArguments").Value = Properties.Settings.Default.StartArguments;
+                    }
+                    activeConfogProps.Item("WorkingDirectory").Value = Path.GetDirectoryName(startProgram);
+                }
+            }
+            else
+            {
+                log.Info("Startup project C#");
+                try //Old projects
+                {
+                    var activeConfogProps = project.ConfigurationManager.ActiveConfiguration.Properties;
                     activeConfogProps.Item("StartAction").Value = (int)StartAction.Program;
                     activeConfogProps.Item("StartProgram").Value = startProgram;
                     if (string.IsNullOrEmpty(activeConfogProps.Item("StartArguments").Value as string))
@@ -346,9 +361,13 @@ namespace KOTEM.BariVSPackage
                     }
                     activeConfogProps.Item("StartWorkingDirectory").Value = Path.GetDirectoryName(startProgram);
                 }
-
-                log.Info("Startup projet set");
-                startupSet = true;
+                catch //SDK projects (launchsettings.json)
+                {
+                    var path = Path.Combine(Path.GetDirectoryName(project.UniqueName), "Properties");
+                    Directory.CreateDirectory(path);
+                    var launchSetting = LaunchSettings.Load(path, project.Name, startProgram, Path.GetDirectoryName(startProgram), Properties.Settings.Default.StartArguments);
+                    launchSetting.Save(path);
+                }
             }
         }
 
