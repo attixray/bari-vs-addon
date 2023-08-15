@@ -78,6 +78,8 @@ namespace KOTEM.BariVSPackage
         private bool startupSet;
         private uint solutionEventsCoockie;
         private ManualResetEvent mre = new ManualResetEvent(false);
+        private bool isSDKStyle;
+        private bool isSDKStyleSet;
 
         private ChangeTypeEnum changeType;
         private bool reloadNeededAfterDebug;
@@ -192,17 +194,18 @@ namespace KOTEM.BariVSPackage
                     }
                 }
 
-                if (Properties.Settings.Default.PromptReload)
-                {
-                    if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
+                if (!isSDKStyle)
+                    if (Properties.Settings.Default.PromptReload)
+                    {
+                        if (ShowMessageBox("Do you want to reload projects/solution?") == IDYES)
+                        {
+                            Reload();
+                        }
+                    }
+                    else
                     {
                         Reload();
                     }
-                }
-                else
-                {
-                    Reload();
-                }
             }
 
             changeType = ChangeTypeEnum.OnlyBuild;
@@ -232,6 +235,7 @@ namespace KOTEM.BariVSPackage
                 try
                 {
                     SetStartUpProject();
+                    SetIsSDK();
                 }
                 catch (Exception ex)
                 {
@@ -270,6 +274,38 @@ namespace KOTEM.BariVSPackage
             }
         }
 
+        private void SetIsSDK()
+        {
+            if (!isSDKStyleSet)
+            {
+                isSDKStyle = false;
+                foreach (Project folder in GetDte().Solution.Projects)
+                {
+                    var found = false;
+                    foreach (ProjectItem projectItem in folder.ProjectItems)
+                    {
+                        if (projectItem.Object is Project project && project.Kind == Community.VisualStudio.Toolkit.ProjectTypes.CSHARP)
+                        {
+                            try
+                            {
+                                var activeConfogProps = project.ConfigurationManager.ActiveConfiguration.Properties;
+                                var opt = (bool)activeConfogProps.Item("Optimize").Value;
+                            }
+                            catch
+                            {
+                                isSDKStyle = true;
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) break;
+
+                }
+                isSDKStyleSet = true;
+            }
+        }
+
         private void SetStartUpProject()
         {
             log.Info("SetStartUpProject");
@@ -277,9 +313,6 @@ namespace KOTEM.BariVSPackage
 
             if (Properties.Settings.Default.SetStartUpProject && !startupSet)
             {
-                var mw = System.Windows.Application.Current.MainWindow;
-                mw.Title = GetDte().MainWindow.Caption + " (bari)";
-
                 log.Info($"StartArguments: {Properties.Settings.Default.StartArguments}");
 
                 var startProjectPaths = SolutionInfo.BariConfig.StartupPath.Split(',').Select(s => s.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".");
@@ -312,7 +345,6 @@ namespace KOTEM.BariVSPackage
             var startProgram = Path.Combine(Path.GetDirectoryName(SolutionInfo.Solution),
                                             SolutionInfo.BariConfig.Target,
                                             project.Name + ".exe");
-
             if (cppProject)
             {
                 var prj = project.Object as VCProject;
@@ -983,6 +1015,7 @@ namespace KOTEM.BariVSPackage
                 try
                 {
                     SetStartUpProject();
+                    SetIsSDK();
                 }
                 catch (Exception ex)
                 {
@@ -1026,6 +1059,7 @@ namespace KOTEM.BariVSPackage
             solutionLoaded = false;
             SolutionInfo = null;
             startupSet = false;
+            isSDKStyleSet = false;
 
             return VSConstants.S_OK;
         }
@@ -1054,6 +1088,7 @@ namespace KOTEM.BariVSPackage
                 try
                 {
                     SetStartUpProject();
+                    SetIsSDK();
                 }
                 catch (Exception ex)
                 {
