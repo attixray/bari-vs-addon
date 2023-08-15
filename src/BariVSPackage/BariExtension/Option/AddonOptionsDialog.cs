@@ -23,6 +23,14 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
         }
 
         [Category("Reload")]
+        [Description("Prompt reload modified projects, solution")]
+        public bool PromptReload
+        {
+            get { return Properties.Settings.Default.PromptReload; }
+            set { Properties.Settings.Default.PromptReload = value; }
+        }
+
+        [Category("Reload")]
         [Description("Keep files open during reload")]
         public bool KeepFilesOpen
         {
