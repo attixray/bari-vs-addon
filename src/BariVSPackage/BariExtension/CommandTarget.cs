@@ -22,6 +22,7 @@ namespace KOTEM.BariVSPackage.BariExtension
         private readonly IPackage baseImpl;
         private readonly Commands commands;
         private readonly IVsServiceProvider provider;
+        private static int normalStart;
 
         public event EventHandler<CommandTargetEventArgs> CommandSent;
 
@@ -73,9 +74,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                         Action action;
                         if (actionMap.TryGetValue(vsStd97CmdID.Value, out action))
                         {
-                            var dte = provider.GetDte();
-                            dte.Documents.SaveAll();
-
+                            SaveAll();
                             action();
                             return VSConstants.S_OK;
 
@@ -87,10 +86,8 @@ namespace KOTEM.BariVSPackage.BariExtension
                                 normalStart--;
                                 return baseImpl.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
                             }
-
                             var dte = provider.GetDte();
-                            dte.Documents.SaveAll();
-                            Thread.Sleep(100);
+                            SaveAll();
                             var timeout = 0;
                             while (baseImpl.IsWatcherBusy && timeout < 300)
                             {
@@ -114,10 +111,24 @@ namespace KOTEM.BariVSPackage.BariExtension
             return baseImpl.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
         }
 
-        private static int normalStart;
+        
         public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
         {
             return baseImpl.QueryStatus(ref pguidCmdGroup, cCmds, prgCmds, pCmdText);
+        }
+
+        private void SaveAll()
+        {
+            var dte = provider.GetDte();
+            try
+            {
+                dte.Documents.SaveAll();
+            }
+            catch
+            {
+                dte.ExecuteCommand("File.SaveAll");
+            }
+            Thread.Sleep(100);
         }
 
         private static VSConstants.VSStd97CmdID? ToVSStd97CmdID(uint nCmdID)
