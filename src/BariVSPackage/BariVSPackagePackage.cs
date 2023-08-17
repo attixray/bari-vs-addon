@@ -315,7 +315,7 @@ namespace KOTEM.BariVSPackage
             {
                 log.Info($"StartArguments: {Properties.Settings.Default.StartArguments}");
 
-                var startProjectPaths = SolutionInfo.BariConfig.StartupPath.Split(',').Select(s => s.TrimSuffix(".exe").Split('\\').LastOrDefault() + ".");
+                var startProjectPaths = SolutionInfo.BariConfig.StartupPath.Split(',').Select(s => s.TrimSuffix(".exe"));
 
                 if (startProjectPaths == null || !startProjectPaths.Any()) return;
 
