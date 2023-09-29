@@ -90,7 +90,7 @@ namespace KOTEM.BariVSPackage
         private string activeDocument;
         private bool checking;
         private IVsTaskStatusCenterService tsc;
-        private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl", ".liquid" });
+        private readonly HashSet<string> extensions = new HashSet<string>(new[] { ".cs", ".fs", ".xaml", ".cpp", ".xml", ".h", ".c", ".png", ".svg", ".txt", ".py", ".ini", ".chm", ".jpg", ".cg", ".hlsl", ".glsl", ".liquid", ".json", ".config", ".manifest" });
         private readonly HashSet<string> projExtensions = new HashSet<string>(new[] { ".csproj", ".vcxproj", ".fsproj", ".vcproj" });
 
         internal const int IDOK = 1;
