@@ -324,9 +324,9 @@ namespace KOTEM.BariVSPackage
                 if (startupProjects == null || !startupProjects.Any()) return;
 
                 if (startupProjects.Count > 1)
-                    GetDte().Solution.SolutionBuild.StartupProjects = startupProjects.Select(s => s.UniqueName).ToArray();
+                    GetDte().Solution.SolutionBuild.StartupProjects = startupProjects.Select(s => s.FileName).ToArray();
                 else
-                    GetDte().Solution.SolutionBuild.StartupProjects = startupProjects[0].UniqueName;
+                    GetDte().Solution.SolutionBuild.StartupProjects = startupProjects[0].FileName;
 
                 foreach (var project in startupProjects)
                 {
@@ -340,7 +340,7 @@ namespace KOTEM.BariVSPackage
 
         private void SetStartupParams(Project project)
         {
-            var cppProject = project.UniqueName.Contains("vcxproj");
+            var cppProject = project.FileName.Contains("vcxproj");
 
             var startProgram = Path.Combine(Path.GetDirectoryName(SolutionInfo.Solution),
                                             SolutionInfo.BariConfig.Target,
@@ -416,13 +416,19 @@ namespace KOTEM.BariVSPackage
                         activeConfogProps.Item("StartArguments").Value = Properties.Settings.Default.StartArguments;
                     }
                     activeConfogProps.Item("StartWorkingDirectory").Value = Path.GetDirectoryName(startProgram);
+                    log.Info("Old project");
                 }
                 catch //SDK projects (launchsettings.json)
                 {
-                    var path = Path.Combine(Path.GetDirectoryName(project.UniqueName), "Properties");
-                    Directory.CreateDirectory(path);
+                    log.Info("SDK project");
+                    var path = Path.Combine(Path.GetDirectoryName(project.FileName), "Properties");
+                    if (!Directory.Exists(path))
+                    {
+                        Directory.CreateDirectory(path);
+                    }
                     var launchSetting = LaunchSettings.Load(path, project.Name, startProgram, Path.GetDirectoryName(startProgram), Properties.Settings.Default.StartArguments);
                     launchSetting.Save(path);
+                    log.Info($"LauncSetting saved: {path}");
                 }
             }
         }
@@ -434,7 +440,7 @@ namespace KOTEM.BariVSPackage
             {
                 if (solFolder != null)
                 {
-                    if (solFolder.UniqueName.ToLowerInvariant().Contains(lowerName))
+                    if (solFolder.FileName.ToLowerInvariant().Contains(lowerName))
                         return solFolder;
                 }
 
@@ -444,7 +450,7 @@ namespace KOTEM.BariVSPackage
                     if (tmpItem != null)
                     {
                         Project proj = tmpItem.Object as Project;
-                        if (proj != null && proj.UniqueName.ToLowerInvariant().Contains(lowerName))
+                        if (proj != null && proj.FileName.ToLowerInvariant().Contains(lowerName))
                         {
                             return proj;
                         }
@@ -533,7 +539,7 @@ namespace KOTEM.BariVSPackage
             if (!Directory.Exists(srcDir)) return;
 
             var projects = new List<string>();
-            projects.AddRange(Projects().Select(p => p.FullName));
+            projects.AddRange(Projects().Select(p => p.FileName));
 
             solutionWatcher = new SolutionWatcher(srcDir, extensions, projExtensions, projects, IsFileInProject);
             solutionWatcher.Changed += SolutionWatcherOnChanged;
@@ -814,14 +820,14 @@ namespace KOTEM.BariVSPackage
             {
                 if (projectItems.Any())
                 {
-                    SaveDocuments(projectItems.Select(p => p.UniqueName).ToList());
+                    SaveDocuments(projectItems.Select(p => p.FileName).ToList());
                     SaveStartupProject();
 
                     foreach (var item in projectItems)
                     {
                         try
                         {
-                            Debug.WriteLine(item.UniqueName);
+                            Debug.WriteLine(item.FileName);
                             ReloadProject(SolutionInfo, item);
                         }
                         catch (Exception e)
@@ -1146,7 +1152,7 @@ namespace KOTEM.BariVSPackage
             if (solutionWatcher != null)
             {
                 var projects = new List<string>();
-                projects.AddRange(Projects().Select(p => p.FullName));
+                projects.AddRange(Projects().Select(p => p.FileName));
                 solutionWatcher.AddProject(projects);
             }
         }
