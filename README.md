@@ -71,8 +71,53 @@ from deleting or replacing them.
 
 Download `BariVSPackage.vsix` from the latest successful
 [Build VSIX](https://github.com/attixray/bari-vs-addon/actions/workflows/build.yml)
-run, close Visual Studio and open the file. To replace an installed copy of the
-same version, uninstall it first under **Extensions › Manage Extensions**.
+run (GitHub wraps it in a zip), close Visual Studio and open the file.
+
+### Upgrading
+
+Every build of the add-on, whoever built it, has the same extension ID,
+`102d89df-1d64-4843-a75d-3a67bf3763a2`. The installer replaces an installed
+copy only if both of these hold:
+
+- the new version is higher;
+- both copies have the same scope. Since 1.12.2 the add-on installs for all
+  users. Older versions installed per user, and the installer leaves such a
+  copy in place and installs next to it.
+
+So before installing:
+
+1. Close Visual Studio and look under **Extensions › Manage Extensions** for
+   every installed *Bari* extension and its version.
+2. Uninstall any copy older than 1.12.2, and any copy of the same version you
+   are installing.
+3. Install the new `.vsix`. Installing for all users needs administrator rights.
+4. Check that exactly one copy is left, with the new version.
+
+If the old copy was signed, the installer may also refuse to replace it with
+an unsigned build; uninstalling it first avoids that too.
+
+Do not leave two copies with the same ID installed side by side. To list the
+installed copies:
+
+```powershell
+$vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+Get-ChildItem "$vs\Common7\IDE\Extensions", "$env:LOCALAPPDATA\Microsoft\VisualStudio\18.0_*\Extensions" -Recurse -Filter extension.vsixmanifest -ErrorAction SilentlyContinue |
+  Select-String '102d89df-1d64-4843-a75d-3a67bf3763a2' -List | ForEach-Object {
+    $version = (Select-String -Path $_.Path -Pattern 'Identity [^>]*Version="([^"]+)"').Matches.Groups[1].Value
+    "$version  $($_.Path)"
+  }
+```
+
+### Synchronous autoload
+
+From 1.12.4 the add-on loads in the background, so Visual Studio does not need
+to allow synchronous autoload of extensions. Visual Studio 18.10 no longer
+shows that option. If an older add-on needs it, it can still be set while Visual
+Studio is closed, with `vsregedit.exe` from Visual Studio's `Common7\IDE`:
+
+```powershell
+vsregedit.exe set "<Visual Studio installation path>" HKCU AutoLoadPackages AsyncAutoLoadOptOutMicrosoftInternalOnly dword 1   # 0 turns it off again
+```
 
 ## Building
 
