@@ -72,9 +72,11 @@ from deleting or replacing them.
 
 ## Installing
 
-Download `BariVSPackage.vsix` from the latest successful
+Download `BariVSPackage.vsix` from the latest
+[release](https://github.com/attixray/bari-vs-addon/releases), close Visual
+Studio and open the file. Builds between releases are artifacts of the
 [Build VSIX](https://github.com/attixray/bari-vs-addon/actions/workflows/build.yml)
-run (GitHub wraps it in a zip), close Visual Studio and open the file.
+runs, wrapped in a zip, and expire after 90 days.
 
 ### Upgrading
 
@@ -135,3 +137,11 @@ msbuild src\BariVSPackage.sln -p:Configuration=Release -p:DeployExtension=false
 
 The package is `src\BariVSPackage\bin\Release\BariVSPackage.vsix`. The version is
 the `Identity` version in `src/BariVSPackage/source.extension.vsixmanifest`.
+
+## Releasing
+
+Raise the `Identity` version, merge to `master`, then either push the tag
+`v<version>` on that commit or run the *Build VSIX* workflow on `master` with
+`release-tag` set to `v<version>`; the manual run creates the tag. Either way
+the workflow publishes a GitHub release with `BariVSPackage.vsix` and its
+`SHA256SUMS`. It refuses a tag that does not match the manifest version.
