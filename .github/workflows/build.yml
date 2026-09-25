@@ -12,18 +12,33 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: microsoft/setup-msbuild@v2
-      - uses: nuget/setup-nuget@v2
+      - uses: actions/checkout@v7
+      - name: Find MSBuild and NuGet
+        # Use the MSBuild of the runner's Visual Studio and its NuGet CLI instead of
+        # setup actions; fetch nuget.exe only if the image has none.
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild) { throw 'MSBuild not found' }
+          $nuget = (Get-Command nuget.exe -ErrorAction SilentlyContinue).Source
+          if (-not $nuget) {
+            $nuget = Join-Path $env:RUNNER_TEMP 'nuget.exe'
+            Invoke-WebRequest https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -OutFile $nuget
+          }
+          "MSBUILD=$msbuild" >> $env:GITHUB_ENV
+          "NUGET=$nuget" >> $env:GITHUB_ENV
+          & $msbuild -version -nologo
+          & $nuget help | Select-Object -First 1
       - name: Restore
         # The project uses PackageReference, so a solution restore skips packages.config;
         # log4net is referenced from src\packages through a HintPath.
         run: |
-          nuget restore src\BariVSPackage.sln
-          nuget install src\BariVSPackage\packages.config -OutputDirectory src\packages
+          & $env:NUGET restore src\BariVSPackage.sln
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:NUGET install src\BariVSPackage\packages.config -OutputDirectory src\packages
       - name: Build
-        run: msbuild src\BariVSPackage.sln -nologo -p:Configuration=Release -p:DeployExtension=false -v:minimal
-      - uses: actions/upload-artifact@v4
+        run: '& $env:MSBUILD src\BariVSPackage.sln -nologo -p:Configuration=Release -p:DeployExtension=false -v:minimal'
+      - uses: actions/upload-artifact@v7
         with:
           name: BariVSPackage.vsix
           path: src/BariVSPackage/bin/Release/BariVSPackage.vsix
