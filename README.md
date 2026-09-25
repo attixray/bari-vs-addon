@@ -35,11 +35,16 @@ commands:
 | Rebuild Solution, Rebuild Selection | `bari --target <goal> rebuild <product>` |
 | Clean Solution | `bari --target <goal> clean <product>` |
 | Start, Start Without Debugging | a bari build first when one is needed: on the first start, or after files changed |
-| Cancel | stops bari and every process it started |
+| Cancel | stops bari and every process it started, at once |
 
-Output goes to the **Bari** pane of the Output window. Build, Rebuild and Clean
+Output goes to the **Build** pane of the Output window. Build, Rebuild and Clean
 from a project's context menu are not intercepted; Visual Studio builds that
 project with MSBuild.
+
+The add-on loads in the background, so Visual Studio's synchronous autoload
+does not need to be allowed. It starts loading when a solution starts opening;
+a build started before it has loaded, right after opening a large solution, is
+an ordinary Visual Studio build.
 
 The add-on watches `src/` and the suite's `.yaml` files. When files are added or
 deleted, or the suite definition changes, it offers to rebuild. For projects
