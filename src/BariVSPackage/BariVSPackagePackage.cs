@@ -193,11 +193,21 @@ namespace KOTEM.BariVSPackage
             roller.ActivateOptions();
             hierarchy.Root.AddAppender(roller);
 
-            hierarchy.Root.Level = Properties.Settings.Default.Logging ? Level.Debug : Level.Off;
-            hierarchy.RaiseConfigurationChanged(EventArgs.Empty);
             hierarchy.Configured = true;
+            ApplyLoggingSetting();
 
             log.Info("Logging initialized");
+        }
+
+        /// <summary>
+        /// Turns logging on or off as the Logging option says; the options page calls it on Apply,
+        /// so the option takes effect without restarting Visual Studio.
+        /// </summary>
+        internal static void ApplyLoggingSetting()
+        {
+            var hierarchy = (Hierarchy)LogManager.GetRepository();
+            hierarchy.Root.Level = Properties.Settings.Default.Logging ? Level.Debug : Level.Off;
+            hierarchy.RaiseConfigurationChanged(EventArgs.Empty);
         }
 
         private void target_CommandSent(object sender, CommandTarget.CommandTargetEventArgs e)

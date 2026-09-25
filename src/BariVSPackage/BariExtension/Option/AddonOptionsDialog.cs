@@ -73,6 +73,7 @@ namespace KOTEM.BariVSPackage.BariExtension.Option
         protected override void OnApply(PageApplyEventArgs e)
         {
             Properties.Settings.Default.Save();
+            BariVsPackagePackage.ApplyLoggingSetting();
             base.OnApply(e);
         }
     }
