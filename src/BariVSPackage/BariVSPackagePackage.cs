@@ -144,6 +144,7 @@ namespace KOTEM.BariVSPackage
             Properties.Settings.Default.Reload();
 
             InitLogging();
+            log.Info("Package initializing");
 
             Debug.WriteLine("Entering InitializeAsync() of: {0}", this);
 
@@ -193,11 +194,21 @@ namespace KOTEM.BariVSPackage
             roller.ActivateOptions();
             hierarchy.Root.AddAppender(roller);
 
-            hierarchy.Root.Level = Properties.Settings.Default.Logging ? Level.Debug : Level.Off;
-            hierarchy.RaiseConfigurationChanged(EventArgs.Empty);
             hierarchy.Configured = true;
+            ApplyLoggingSetting();
 
             log.Info("Logging initialized");
+        }
+
+        /// <summary>
+        /// Turns logging on or off as the Logging option says; the options page calls it on Apply,
+        /// so the option takes effect without restarting Visual Studio.
+        /// </summary>
+        internal static void ApplyLoggingSetting()
+        {
+            var hierarchy = (Hierarchy)LogManager.GetRepository();
+            hierarchy.Root.Level = Properties.Settings.Default.Logging ? Level.Debug : Level.Off;
+            hierarchy.RaiseConfigurationChanged(EventArgs.Empty);
         }
 
         private void target_CommandSent(object sender, CommandTarget.CommandTargetEventArgs e)
@@ -577,6 +588,7 @@ namespace KOTEM.BariVSPackage
         private void SolutionWatcherOnChecked(object sender, EventArgs e)
         {
             Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checked");
+            log.Info("File changes checked");
             mre.Set();
             checking = false;
         }
@@ -586,6 +598,7 @@ namespace KOTEM.BariVSPackage
             if (!checking)
             {
                 checking = true;
+                log.Info("Checking file changes");
 
                 ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                 {
@@ -1080,6 +1093,7 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionLoadEvents.OnBeforeOpenSolution(string pszSolutionFilename)
         {
+            log.Info($"OnBeforeOpenSolution {pszSolutionFilename}");
             AttachPluginToSolution(pszSolutionFilename);
             return VSConstants.S_OK;
         }

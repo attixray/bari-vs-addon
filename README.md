@@ -67,7 +67,7 @@ from deleting or replacing them.
 | KeepFilesOpen | on | reopen the open documents after a reload |
 | Verbose | off | pass `-v` to bari |
 | SoftClean | off | pass `--soft-clean` to `clean` and `rebuild` |
-| Logging | off | log to `%LOCALAPPDATA%\Bari\Logs\bari-log.txt`; takes effect the next time Visual Studio starts |
+| Logging | off | log to `%LOCALAPPDATA%\Bari\Logs\bari-log.txt` |
 | SetManagedDebugger | on | debug the startup project with the managed debugger only |
 
 ## Installing
