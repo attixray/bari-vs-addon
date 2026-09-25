@@ -40,17 +40,23 @@ namespace KOTEM.BariVSPackage
     /// </summary>
     // This attribute tells the PkgDef creation utility (CreatePkgDef.exe) that this class is
     // a package.
-    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = false)]
+    // The package loads in the background, so Visual Studio does not need
+    // "Allow synchronous autoload of extensions" to load it.
+    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     // This attribute is used to register the information needed to show this package
     // in the Help/About dialog of Visual Studio.
-    [ProvideAutoLoad(UIContextGuids80.NoSolution, PackageAutoLoadFlags.None)]
+    [ProvideAutoLoad(UIContextGuids80.NoSolution, PackageAutoLoadFlags.BackgroundLoad)]
+    [ProvideAutoLoad(UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
+    // Opening a solution directly (devenv x.sln, double-click) never activates NoSolution, and
+    // SolutionExists only after the solution loaded; start loading as soon as it starts opening.
+    [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionOpening_string, PackageAutoLoadFlags.BackgroundLoad)]
     [InstalledProductRegistration("#110", "#112", "1.0", IconResourceID = 400)]
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "Addon", 201, 202, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "Addon", 201, 202, true)]
     [ProvideProfileAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [ProvideOptionPageAttribute(typeof(AddonOptionsDialog), "Bari", "General", 201, 203, true)]
     [Guid(GuidList.guidBariVSPackagePkgString)]
-    public sealed class BariVsPackagePackage : Package, IDisposable, IVsServiceProvider, IVsSolutionLoadEvents, IVsSolutionEvents, IPackage
+    public sealed class BariVsPackagePackage : AsyncPackage, IDisposable, IVsServiceProvider, IVsSolutionLoadEvents, IVsSolutionEvents, IPackage
     {
         private enum ChangeTypeEnum
         {
@@ -127,13 +133,19 @@ namespace KOTEM.BariVSPackage
             get { return solutionWatcher.IsBusy; }
         }
 
-        protected override void Initialize()
+        protected override async System.Threading.Tasks.Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
+            await base.InitializeAsync(cancellationToken, progress);
+
+            // The solution events, DTE and the keyboard and dialog hooks, which hook the
+            // calling thread, all belong on the UI thread.
+            await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+
             Properties.Settings.Default.Reload();
 
             InitLogging();
 
-            Debug.WriteLine("Entering Initialize() of: {0}", this);
+            Debug.WriteLine("Entering InitializeAsync() of: {0}", this);
 
             var vsSolution = GetService<SVsSolution>() as IVsSolution;
             if (vsSolution != null)
@@ -144,7 +156,22 @@ namespace KOTEM.BariVSPackage
             RegisterKeyboardHook();
             RegisterDialogKiller();
 
-            base.Initialize();
+            // Loading in the background, the package may start after a solution was opened.
+            if (vsSolution != null && IsSolutionFullyLoaded(vsSolution))
+            {
+                log.Info("Solution already open when the package loaded");
+                OnSolutionLoaded();
+            }
+        }
+
+        private static bool IsSolutionFullyLoaded(IVsSolution solution)
+        {
+            object isOpen;
+            object isFullyLoaded;
+            return ErrorHandler.Succeeded(solution.GetProperty((int)__VSPROPID.VSPROPID_IsSolutionOpen, out isOpen)) &&
+                   isOpen is bool && (bool)isOpen &&
+                   ErrorHandler.Succeeded(solution.GetProperty((int)__VSPROPID4.VSPROPID_IsSolutionFullyLoaded, out isFullyLoaded)) &&
+                   isFullyLoaded is bool && (bool)isFullyLoaded;
         }
 
         private void InitLogging()
@@ -1011,6 +1038,12 @@ namespace KOTEM.BariVSPackage
         int IVsSolutionLoadEvents.OnAfterBackgroundSolutionLoadComplete()
         {
             log.Info("OnAfterBackgroundSolutionLoadComplete");
+            OnSolutionLoaded();
+            return VSConstants.S_OK;
+        }
+
+        private void OnSolutionLoaded()
+        {
             Properties.Settings.Default.Reload();
 
             AttachPluginToSolution();
@@ -1028,8 +1061,6 @@ namespace KOTEM.BariVSPackage
                     log.Warn("SetStartUpProject", ex);
                 }
             }
-
-            return VSConstants.S_OK;
         }
 
         int IVsSolutionLoadEvents.OnAfterLoadProjectBatch(bool fIsBackgroundIdleBatch)
