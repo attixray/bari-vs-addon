@@ -144,6 +144,7 @@ namespace KOTEM.BariVSPackage
             Properties.Settings.Default.Reload();
 
             InitLogging();
+            log.Info("Package initializing");
 
             Debug.WriteLine("Entering InitializeAsync() of: {0}", this);
 
@@ -587,6 +588,7 @@ namespace KOTEM.BariVSPackage
         private void SolutionWatcherOnChecked(object sender, EventArgs e)
         {
             Debug.WriteLine($"{DateTime.Now.ToString("hh:mm:ss:fff")} - Checked");
+            log.Info("File changes checked");
             mre.Set();
             checking = false;
         }
@@ -596,6 +598,7 @@ namespace KOTEM.BariVSPackage
             if (!checking)
             {
                 checking = true;
+                log.Info("Checking file changes");
 
                 ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                 {
@@ -1090,6 +1093,7 @@ namespace KOTEM.BariVSPackage
 
         int IVsSolutionLoadEvents.OnBeforeOpenSolution(string pszSolutionFilename)
         {
+            log.Info($"OnBeforeOpenSolution {pszSolutionFilename}");
             AttachPluginToSolution(pszSolutionFilename);
             return VSConstants.S_OK;
         }

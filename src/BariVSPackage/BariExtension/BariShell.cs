@@ -10,6 +10,7 @@ namespace KOTEM.BariVSPackage.BariExtension
 {
     public class BariShell
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(BariShell));
         public class BariCommandArgs : EventArgs
         {
             public BariCommandArgs(string action)
@@ -83,6 +84,8 @@ namespace KOTEM.BariVSPackage.BariExtension
                 };
 
                 proc.Start();
+                var watch = Stopwatch.StartNew();
+                log.Info($"Started bari {arguments.Trim()} (process {proc.Id})");
                 // bari and everything it starts (MSBuild, its nodes, the compiler server) share a
                 // job, so cancelling stops the whole tree at once instead of walking it with WMI
                 // while bari keeps writing into a closed pipe.
@@ -126,6 +129,10 @@ namespace KOTEM.BariVSPackage.BariExtension
                 // outlive a finished build, such as reused MSBuild nodes, running.
                 if (job != IntPtr.Zero)
                     CloseHandle(job);
+
+                log.Info(cancelled
+                    ? $"bari {actionName} cancelled after {watch.Elapsed.TotalSeconds:0.0} s"
+                    : $"bari {actionName} exited with {proc.ExitCode} after {watch.Elapsed.TotalSeconds:0.0} s");
 
                 if (after != null && (forceAction || proc.ExitCode == 0))
                 {

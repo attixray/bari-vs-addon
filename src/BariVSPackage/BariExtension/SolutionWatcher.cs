@@ -138,6 +138,8 @@ namespace KOTEM.BariVSPackage.BariExtension
             {
                 Task.Factory.StartNew(() =>
                 {
+                    var watch = Stopwatch.StartNew();
+                    var files = 0;
                     var checkSumss = currentProjects.Except(openedProjects).SelectMany(p =>
                         Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
                             .Select(f => f.ToLowerInvariant())
@@ -153,6 +155,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                             tasks.Add(task);
                         });
 
+                        files = tasks.Count;
                         Parallel.ForEach(tasks.Where(t => t.Result.Item2 != null), (t) =>
                         {
                             if (!checkSums.ContainsKey(t.Result.Item1))
@@ -168,6 +171,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                             openedProjects.Add(currentProject);
                         }
                     }
+                    log.Info($"Checksums of {files} files computed in {watch.ElapsedMilliseconds} ms");
                 }, CancellationToken.None, TaskCreationOptions.HideScheduler, scheduler);
             }
         }
