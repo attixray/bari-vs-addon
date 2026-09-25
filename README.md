@@ -42,9 +42,12 @@ from a project's context menu are not intercepted; Visual Studio builds that
 project with MSBuild.
 
 The add-on loads in the background, so Visual Studio's synchronous autoload
-does not need to be allowed. It starts loading when a solution starts opening;
-a build started before it has loaded, right after opening a large solution, is
-an ordinary Visual Studio build.
+does not need to be allowed. When Visual Studio starts without a solution, the
+add-on loads within a few seconds. When it starts with a solution, for example
+from a double-clicked `.sln`, Visual Studio holds background loads until the
+solution has finished loading. For a large suite that can take a minute. A
+build clicked in the meantime can still start as an ordinary Visual Studio
+build rather than through bari.
 
 The add-on watches `src/` and the suite's `.yaml` files. When files are added or
 deleted, or the suite definition changes, it offers to rebuild. For projects
@@ -64,7 +67,7 @@ from deleting or replacing them.
 | KeepFilesOpen | on | reopen the open documents after a reload |
 | Verbose | off | pass `-v` to bari |
 | SoftClean | off | pass `--soft-clean` to `clean` and `rebuild` |
-| Logging | off | log to `%LOCALAPPDATA%\Bari\Logs\bari-log.txt` |
+| Logging | off | log to `%LOCALAPPDATA%\Bari\Logs\bari-log.txt`; takes effect the next time Visual Studio starts |
 | SetManagedDebugger | on | debug the startup project with the managed debugger only |
 
 ## Installing
