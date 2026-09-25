@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Management;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using KOTEM.BariVSPackage.Properties;
@@ -82,6 +83,15 @@ namespace KOTEM.BariVSPackage.BariExtension
                 };
 
                 proc.Start();
+                // bari and everything it starts (MSBuild, its nodes, the compiler server) share a
+                // job, so cancelling stops the whole tree at once instead of walking it with WMI
+                // while bari keeps writing into a closed pipe.
+                var job = CreateJobObject(IntPtr.Zero, null);
+                if (job != IntPtr.Zero && !AssignProcessToJobObject(job, proc.Handle))
+                {
+                    CloseHandle(job);
+                    job = IntPtr.Zero;
+                }
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
                 var cancelled = false;
@@ -95,7 +105,9 @@ namespace KOTEM.BariVSPackage.BariExtension
                         proc.WaitForExit(100);
                         if (isCancellationRequested)
                         {
-                            KillProcessAndChildren(proc.Id);
+                            if (job == IntPtr.Zero || !TerminateJobObject(job, 1))
+                                KillProcessAndChildren(proc.Id);
+                            proc.WaitForExit(10000);
                             ShowOutput("Build cancelled.");
                             cancelled = true;
                             frame.Continue = false;
@@ -109,6 +121,11 @@ namespace KOTEM.BariVSPackage.BariExtension
                     }
                 });
                 Dispatcher.PushFrame(frame);
+
+                // Without JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, closing the job leaves processes that
+                // outlive a finished build, such as reused MSBuild nodes, running.
+                if (job != IntPtr.Zero)
+                    CloseHandle(job);
 
                 if (after != null && (forceAction || proc.ExitCode == 0))
                 {
@@ -144,6 +161,21 @@ namespace KOTEM.BariVSPackage.BariExtension
                 // Process already exited.
             }
         }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr jobAttributes, string name);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
 
         private void ShowOutput(string data)
         {
