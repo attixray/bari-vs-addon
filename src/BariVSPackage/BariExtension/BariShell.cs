@@ -73,9 +73,17 @@ namespace KOTEM.BariVSPackage.BariExtension
                 var proc = new Process { StartInfo = processStartInfo };
                 proc.OutputDataReceived += (sendingProcess, outLine)
                     => ShowOutput(outLine.Data);
+                // stderr is redirected, so it must be drained too: once its pipe buffer fills,
+                // bari blocks on the next write and the build never finishes.
+                proc.ErrorDataReceived += (sendingProcess, errLine) =>
+                {
+                    if (errLine.Data != null)
+                        ShowOutput(errLine.Data);
+                };
 
                 proc.Start();
                 proc.BeginOutputReadLine();
+                proc.BeginErrorReadLine();
                 var cancelled = false;
 
                 DispatcherFrame frame = new DispatcherFrame();
