@@ -1,16 +1,28 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="102d89df-1d64-4843-a75d-3a67bf3763a2" Version="1.12.1" Language="en-US" Publisher="KOTEM" />
-        <DisplayName>Bari VisualStudio Package 2022</DisplayName>
+        <Identity Id="102d89df-1d64-4843-a75d-3a67bf3763a2" Version="1.12.2" Language="en-US" Publisher="KOTEM" />
+        <DisplayName>Bari VisualStudio Package 2026</DisplayName>
         <Description xml:space="preserve">Visual Studio addon for bari, an advanced build management tool for .NET projects.
     </Description>
     </Metadata>
-    <Installation InstalledByMsi="false">
-        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0,)">
+    <Installation InstalledByMsi="false" AllUsers="true">
+        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[18.0,)">
             <ProductArchitecture>amd64</ProductArchitecture>
         </InstallationTarget>
-        <InstallationTarget Version="[17.0,)" Id="Microsoft.VisualStudio.Community">
+        <InstallationTarget Version="[18.0,)" Id="Microsoft.VisualStudio.Community">
+            <ProductArchitecture>x86</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[18.0,)" Id="Microsoft.VisualStudio.Pro">
+            <ProductArchitecture>amd64</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[18.0,)" Id="Microsoft.VisualStudio.Pro">
+            <ProductArchitecture>x86</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[18.0,)" Id="Microsoft.VisualStudio.Enterprise">
+            <ProductArchitecture>amd64</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[18.0,)" Id="Microsoft.VisualStudio.Enterprise">
             <ProductArchitecture>x86</ProductArchitecture>
         </InstallationTarget>
     </Installation>
