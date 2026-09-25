@@ -141,6 +141,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                     var checkSumss = currentProjects.Except(openedProjects).SelectMany(p =>
                         Directory.EnumerateFiles(p, "*.*", SearchOption.AllDirectories)
                             .Select(f => f.ToLowerInvariant())
+                            .Where(file => !IsBuildByproduct(file))
                             .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith)));
 
                     if (checkSumss.Any())
@@ -152,7 +153,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                             tasks.Add(task);
                         });
 
-                        Parallel.ForEach(tasks, (t) =>
+                        Parallel.ForEach(tasks.Where(t => t.Result.Item2 != null), (t) =>
                         {
                             if (!checkSums.ContainsKey(t.Result.Item1))
                             {
@@ -173,6 +174,11 @@ namespace KOTEM.BariVSPackage.BariExtension
 
         private void FileSystemChanged(object sender, FileSystemEventArgs e)
         {
+            if (IsBuildByproduct(e.FullPath))
+            {
+                return;
+            }
+
             started = true;
 
             var ext = (Path.GetExtension(e.FullPath) ?? string.Empty).ToLower();
@@ -234,6 +240,7 @@ namespace KOTEM.BariVSPackage.BariExtension
                 var checkSumss = files.SelectMany(p =>
                     Directory.EnumerateFiles(IsFolder(p) ? p : Path.GetDirectoryName(p), "*.*", SearchOption.TopDirectoryOnly)
                         .Select(f => f.ToLowerInvariant())
+                        .Where(file => !IsBuildByproduct(file))
                         .Where(file => projExtensions.Any(file.EndsWith) || extensions.Any(file.EndsWith) || file.EndsWith(".yaml"))).Distinct();
 
                 var tasks = new ConcurrentBag<Task<Tuple<string, byte[]>>>();
@@ -243,7 +250,8 @@ namespace KOTEM.BariVSPackage.BariExtension
                     tasks.Add(task);
                 });
 
-                Parallel.ForEach(tasks, (t) => { currentCheckSums.Add(t.Result.Item1, t.Result.Item2); });
+                // A file that vanished or could not be read counts as absent.
+                Parallel.ForEach(tasks.Where(t => t.Result.Item2 != null), (t) => { currentCheckSums.Add(t.Result.Item1, t.Result.Item2); });
 
                 var added = new List<KeyValuePair<string, byte[]>>();
                 var deleted = new List<KeyValuePair<string, byte[]>>();
@@ -325,13 +333,41 @@ namespace KOTEM.BariVSPackage.BariExtension
             return string.IsNullOrEmpty(Path.GetExtension(path) ?? string.Empty);
         }
 
+        /// <summary>
+        /// Returns null when the file is gone or cannot be read. Opens with FileShare.Delete so that
+        /// hashing never makes a build's delete fail: bari's clean deletes the generated project files
+        /// and the WPF markup compiler deletes its *_wpftmp.csproj while this watcher reacts to them.
+        /// </summary>
         private byte[] ComputeChecksum(string path)
         {
-            using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var bufferedStream = new BufferedStream(stream, 1048576))
+            try
             {
-                return new MD5CryptoServiceProvider().ComputeHash(bufferedStream);
+                using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var bufferedStream = new BufferedStream(stream, 1048576))
+                using (var md5 = new MD5CryptoServiceProvider())
+                {
+                    return md5.ComputeHash(bufferedStream);
+                }
             }
+            catch (IOException ex)
+            {
+                log.Debug($"Checksum skipped: {path}", ex);
+                return null;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                log.Debug($"Checksum skipped: {path}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Project files the WPF markup compiler creates and deletes next to the real project during builds,
+        /// e.g. Project_abcd1234_wpftmp.csproj.
+        /// </summary>
+        private static bool IsBuildByproduct(string path)
+        {
+            return Path.GetFileName(path).IndexOf("_wpftmp.", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         protected virtual void Dispose(bool disposing)
