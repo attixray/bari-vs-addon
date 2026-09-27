@@ -105,7 +105,10 @@ namespace KOTEM.BariVSPackage.BariExtension
             InitCheckSums(openedProjects);
             Task.Factory.StartNew(() =>
             {
-                checkSums.Add(YamlPath.ToLowerInvariant(), ComputeChecksum(YamlPath));
+                // Like the other checksums, a yaml that cannot be read now counts as absent.
+                var yamlCheckSum = ComputeChecksum(YamlPath);
+                if (yamlCheckSum != null)
+                    checkSums[YamlPath.ToLowerInvariant()] = yamlCheckSum;
             }, CancellationToken.None, TaskCreationOptions.HideScheduler, scheduler);
 
             watcher.Changed += FileSystemChanged;
